@@ -1,3 +1,8 @@
+// ↓ 追加（ビルド時の誤った最適化・Edge実行を避ける）
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 // app/api/generate-topic/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
