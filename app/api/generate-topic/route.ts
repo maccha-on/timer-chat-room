@@ -1,50 +1,50 @@
-// ↓ 追加（ビルド時の誤った最適化・Edge実行を避ける）
+// app/api/generate-topic/route.ts
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-// app/api/generate-topic/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { createClient } from '@supabase/supabase-js';
 
-// サーバー専用クライアント（service_role）
+type Body = { roomId: string; requesterId: string };
+type RoomMemberRow = { user_id: string };
+type RoundRow = { id: number };
+
 const supaAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!, // ← フロントに出さない
+  process.env.SUPABASE_SERVICE_ROLE_KEY!, // ← server-only
 );
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
 export async function POST(req: NextRequest) {
   try {
-    const { roomId, requesterId } = await req.json() as { roomId: string; requesterId: string };
+    const { roomId, requesterId } = (await req.json()) as Body;
 
     if (!roomId || !requesterId) {
       return NextResponse.json({ error: 'roomId/requesterId required' }, { status: 400 });
     }
 
-    // 1) そのルームのメンバー一覧を取得
+    // 1) メンバー取得
     const { data: members, error: memErr } = await supaAdmin
       .from('room_members')
       .select('user_id')
       .eq('room_id', roomId);
 
     if (memErr) throw memErr;
-    if (!members || members.length < 2) {
+    const ids = (members as RoomMemberRow[] | null)?.map((m) => m.user_id) ?? [];
+    if (ids.length < 2) {
       return NextResponse.json({ error: 'メンバーが2人以上必要です' }, { status: 400 });
     }
 
-    // 2) お題を生成（大人がほぼ知っている一般名詞を1語、句読点なし）
-    //    念のため複数生成→フィルタ→ランダムに1つ、でもまずは1つでOK
-    const prompt = `日本語で、大人ならほとんどの人が知っている一般名詞を1語だけ出してください。
-- 固有名詞や専門用語は避ける
-- ひらがな・カタカナ・ごく一般的な漢字のみ
-- 出力は単語のみ（記号、句読点、解説は不要）
-例: りんご, バス, ねこ, 時計, 旅行, 料理`;
+    // 2) お題生成
+    const prompt =
+      '日本語で、大人ならほとんどの人が知っている一般名詞を1語だけ出してください。' +
+      '固有名詞や専門用語は避け、出力は単語のみ（記号・説明なし）。';
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini', // 速くて安価なモデル推奨（必要に応じて変更）
+      model: 'gpt-4o-mini',
       messages: [
         { role: 'system', content: 'You are a helpful topic generator.' },
         { role: 'user', content: prompt },
@@ -53,49 +53,42 @@ export async function POST(req: NextRequest) {
       max_tokens: 10,
     });
 
-    let topic = completion.choices[0]?.message?.content?.trim() || '';
-    topic = topic.replace(/[^\p{L}\p{N}\u3000\u3040-\u30FF\u4E00-\u9FFF]/gu, ''); // 安全に余分を除去
+    let topic = completion.choices[0]?.message?.content?.trim() ?? '';
+    topic = topic.replace(/[^\p{L}\p{N}\u3000\u3040-\u30FF\u4E00-\u9FFF]/gu, '');
+    if (!topic) return NextResponse.json({ error: 'お題生成に失敗しました' }, { status: 500 });
 
-    if (!topic) {
-      return NextResponse.json({ error: 'お題生成に失敗しました' }, { status: 500 });
-    }
-
-    // 3) 役割を抽選（presenter 1人、insider 1人）
-    const ids = members.map(m => m.user_id);
-    const shuffled = ids.sort(() => Math.random() - 0.5);
+    // 3) 役割抽選
+    const shuffled = [...ids].sort(() => Math.random() - 0.5);
     const presenter = shuffled[0];
-    let insider = shuffled[1];
-    if (!insider) insider = shuffled[0]; // 念のため（2人未満は前で弾いている）
+    const insider = shuffled[1] ?? shuffled[0];
 
-    // 4) rounds を作成
+    // 4) rounds 作成
     const { data: round, error: rErr } = await supaAdmin
       .from('rounds')
       .insert({ room_id: roomId, topic, created_by: requesterId })
       .select()
       .single();
+
     if (rErr || !round) throw rErr;
+    const roundId = (round as RoundRow).id;
 
-    // 5) round_roles を一括作成
-    const rows = ids.map(uid => ({
-      round_id: round.id,
+    // 5) round_roles 追加
+    const rows = ids.map((uid) => ({
+      round_id: roundId,
       user_id: uid,
-      role: uid === presenter ? 'presenter' : (uid === insider ? 'insider' : 'common'),
+      role: uid === presenter ? 'presenter' : uid === insider ? 'insider' : 'common',
     }));
-
     const { error: rrErr } = await supaAdmin.from('round_roles').insert(rows);
     if (rrErr) throw rrErr;
 
-    // リクエストユーザーの役割と、閲覧可否に応じたtopicを返す
-    const myRole = rows.find(r => r.user_id === requesterId)?.role ?? 'common';
+    const myRole = rows.find((r) => r.user_id === requesterId)?.role ?? 'common';
     const canSee = myRole === 'presenter' || myRole === 'insider';
 
-    return NextResponse.json({
-      roundId: round.id,
-      myRole,
-      topic: canSee ? topic : null,
-    });
-  } catch (e: any) {
-    console.error(e);
-    return NextResponse.json({ error: e.message ?? 'server error' }, { status: 500 });
+    return NextResponse.json({ roundId, myRole, topic: canSee ? topic : null });
+  } catch (e: unknown) {
+    const message =
+      typeof e === 'object' && e !== null && 'message' in e ? String((e as { message: unknown }).message) : 'server error';
+    // 500は伏せつつ詳細はFunction Logsで確認
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

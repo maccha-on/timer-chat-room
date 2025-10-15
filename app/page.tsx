@@ -1,16 +1,17 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import { supabase } from './lib/supabaseClient';
 
 type Room = { id: string; name: string };
+type RoomMember = { room_id: string };
 
 export default function Home() {
   const [sessionReady, setSessionReady] = useState(false);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [name, setName] = useState('');
 
-  // 認証チェック
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       if (!data.session) location.href = '/login';
@@ -18,40 +19,30 @@ export default function Home() {
     });
   }, []);
 
-  // 自分がメンバーのルーム一覧を取得
   useEffect(() => {
     if (!sessionReady) return;
     (async () => {
       const { data: mem } = await supabase.from('room_members').select('room_id');
-      const ids = (mem ?? []).map((m: any) => m.room_id);
+      const ids = (mem as RoomMember[] | null)?.map((m) => m.room_id) ?? [];
       if (ids.length === 0) return setRooms([]);
       const { data: rms } = await supabase.from('rooms').select('id,name').in('id', ids);
-      setRooms(rms ?? []);
+      setRooms((rms as Room[] | null) ?? []);
     })();
   }, [sessionReady]);
 
-  // ルーム作成（owner=自分 → room_membersに自分を追加）
   const createRoom = async () => {
     if (!name.trim()) return;
     const { data: u, error: uerr } = await supabase.auth.getUser();
     if (uerr || !u.user) return alert(uerr?.message ?? 'Not signed in');
     const owner = u.user.id;
 
-    const { data: room, error: rerr } = await supabase
-      .from('rooms')
-      .insert({ name, owner })
-      .select()
-      .single();
-
+    const { data: room, error: rerr } = await supabase.from('rooms').insert({ name, owner }).select().single();
     if (rerr || !room) return alert(`rooms insert failed: ${rerr?.message}`);
 
-    const { error: merr } = await supabase
-      .from('room_members')
-      .insert({ room_id: room.id, user_id: owner });
-
+    const { error: merr } = await supabase.from('room_members').insert({ room_id: (room as Room).id, user_id: owner });
     if (merr) return alert(`room_members insert failed: ${merr.message}`);
 
-    location.href = `/rooms/${room.id}`;
+    location.href = `/rooms/${(room as Room).id}`;
   };
 
   const logout = async () => {
@@ -63,9 +54,8 @@ export default function Home() {
 
   return (
     <div style={{ maxWidth: 720, margin: '20px auto' }}>
-      {/* 上部中央に画像 */}
       <div style={{ textAlign: 'center', marginBottom: 16 }}>
-        <img src="/top.png" alt="Top" style={{ maxHeight: 160 }} />
+        <Image src="/top.png" alt="Top" width={480} height={120} style={{ height: 'auto' }} />
       </div>
 
       <h1>Rooms</h1>
@@ -75,7 +65,7 @@ export default function Home() {
           placeholder="Room name"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          style={{ flex: 1, border: '1px solid #9ca3af', padding: '6px 8px', borderRadius: 6 }} // グレー枠
+          style={{ flex: 1, border: '1px solid #9ca3af', padding: '6px 8px', borderRadius: 6 }}
         />
         <button
           onClick={createRoom}

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { supabase } from '../lib/supabaseClient';
 
 export default function LoginPage() {
@@ -14,14 +15,13 @@ export default function LoginPage() {
     if (!name) return alert('ユーザー名を入力してください');
     setBusy(true);
 
-    // 匿名サインイン（Anonymous ProviderをDashboardで有効化しておく）
-    const { data: sign, error: signErr } = await supabase.auth.signInAnonymously();
+    // sign を受け取らず未使用警告を回避
+    const { error: signErr } = await supabase.auth.signInAnonymously();
     if (signErr) {
       setBusy(false);
       return alert(`anonymous sign-in failed: ${signErr.message}`);
     }
 
-    // uid を取得し、profiles にユーザー名を保存（初回用）
     const { data: u } = await supabase.auth.getUser();
     const uid = u.user?.id;
     if (!uid) {
@@ -29,7 +29,6 @@ export default function LoginPage() {
       return alert('サインインに失敗しました（uidなし）');
     }
 
-    // すでに登録済みかを確認してから upsert でもOK
     const { error: upsertErr } = await supabase
       .from('profiles')
       .upsert({ id: uid, username: name }, { onConflict: 'id' });
@@ -44,15 +43,12 @@ export default function LoginPage() {
 
   return (
     <div style={{ maxWidth: 420, margin: '40px auto' }}>
-      {/* 上部中央に画像 */}
       <div style={{ textAlign: 'center', marginBottom: 16 }}>
-        <img src="/top.png" alt="Top" style={{ maxHeight: 160 }} />
+        <Image src="/top.png" alt="Top" width={480} height={120} style={{ height: 'auto' }} />
       </div>
 
       <h1 style={{ marginBottom: 10 }}>ユーザー名で入室</h1>
-      <p style={{ opacity: 0.7, marginBottom: 12 }}>
-        Googleやメールは不要です。任意のユーザー名を入力して入室してください。
-      </p>
+      <p style={{ opacity: 0.7, marginBottom: 12 }}>Googleやメールは不要です。任意のユーザー名を入力して入室してください。</p>
 
       <input
         placeholder="ユーザー名（例: tanaka）"
@@ -60,7 +56,7 @@ export default function LoginPage() {
         onChange={(e) => setUsername(e.target.value)}
         onKeyDown={(e) => e.key === 'Enter' && !busy && enter()}
         disabled={busy}
-        style={{ width: '100%', padding: 8, border: '1px solid #9ca3af', borderRadius: 6 }} // グレー枠
+        style={{ width: '100%', padding: 8, border: '1px solid #9ca3af', borderRadius: 6 }}
       />
 
       <button
@@ -81,9 +77,7 @@ export default function LoginPage() {
         {busy ? '入室中…' : '入室'}
       </button>
 
-      <p style={{ opacity: 0.6, marginTop: 10, fontSize: 12 }}>
-        ※ 匿名セッションはブラウザに保存されます。サインアウトや保存削除で別人扱いになります。
-      </p>
+      <p style={{ opacity: 0.6, marginTop: 10, fontSize: 12 }}>※ 匿名セッションはブラウザに保存されます。サインアウトや保存削除で別人扱いになります。</p>
     </div>
   );
 }
