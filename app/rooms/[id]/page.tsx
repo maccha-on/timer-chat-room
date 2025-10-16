@@ -62,12 +62,10 @@ export default function RoomPage() {
       setUserId(data.session.user.id);
       const { data: p } = await supabase.from('profiles').select('username').eq('id', data.session.user.id).single();
       setUsername(p?.username ?? '(anonymous)');
-      // room_members 登録
       await supabase.from('room_members').upsert(
         { room_id: roomId, user_id: data.session.user.id },
         { onConflict: 'room_id,user_id' }
       );
-      // room_scores 登録（初期値0）
       await supabase.from('room_scores').upsert(
         { room_id: roomId, user_id: data.session.user.id, score: 0 },
         { onConflict: 'room_id,user_id' }
@@ -75,45 +73,16 @@ export default function RoomPage() {
     })();
   }, [roomId]);
 
-
-  // メンバー一覧（2段階フェッチ：room_members → profiles）
+  // メンバー一覧
   const fetchMembers = async () => {
-    // 1) まず room_members から user_id 一覧を取得
-    const { data: rms, error: e1 } = await supabase
-      .from('room_members')
-      .select('user_id')
-      .eq('room_id', roomId);
-
-    if (e1) {
-      console.error('room_members select error', e1.message);
-      setMembers([]);
-      return;
-    }
-
+    const { data: rms } = await supabase.from('room_members').select('user_id').eq('room_id', roomId);
     const ids = (rms ?? []).map((r) => r.user_id as string);
-    if (ids.length === 0) {
-      setMembers([]);
-      return;
-    }
-
-    // 2) 次に profiles から username を一括取得
-    const { data: profs, error: e2 } = await supabase
-      .from('profiles')
-      .select('id, username')
-      .in('id', ids);
-
-    if (e2) {
-      console.error('profiles select error', e2.message);
-      // username が取れない場合でも ID は出す
-      setMembers(ids.map((id) => ({ id, username: 'anonymous' })));
-      return;
-    }
-
+    if (ids.length === 0) return setMembers([]);
+    const { data: profs } = await supabase.from('profiles').select('id, username').in('id', ids);
     const map = new Map<string, string>((profs ?? []).map((p) => [p.id as string, p.username as string]));
     setMembers(ids.map((id) => ({ id, username: map.get(id) ?? 'anonymous' })));
   };
 
-  // スコア一覧
   const fetchScores = async () => {
     const { data } = await supabase.from('room_scores').select('*').eq('room_id', roomId);
     const dict: Record<string, number> = {};
@@ -121,7 +90,6 @@ export default function RoomPage() {
     setScores(dict);
   };
 
-  // メッセージとタイマー
   const fetchAll = async () => {
     const { data: msg } = await supabase
       .from('messages')
@@ -136,11 +104,7 @@ export default function RoomPage() {
       username: m.profiles?.username ?? 'anonymous',
     }));
     setMessages(mapped);
-    const { data: t } = await supabase
-      .from('timers')
-      .select('room_id, deadline_at, duration_seconds, updated_at')
-      .eq('room_id', roomId)
-      .single();
+    const { data: t } = await supabase.from('timers').select('*').eq('room_id', roomId).single();
     setTimer(t ?? null);
   };
 
@@ -153,54 +117,32 @@ export default function RoomPage() {
     })();
   }, [ready, roomId]);
 
-  // スコア変更
   const updateScore = async (uid: string, delta: number) => {
     const newVal = (scores[uid] ?? 0) + delta;
     setScores((prev) => ({ ...prev, [uid]: newVal }));
     await supabase.from('room_scores').upsert({ room_id: roomId, user_id: uid, score: newVal });
   };
 
-  // Realtime購読
+  // realtime購読
   useEffect(() => {
     if (!ready) return;
     const channel = supabase
       .channel(`room:${roomId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_scores', filter: `room_id=eq.${roomId}` }, () =>
-        fetchScores()
-      )
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${roomId}` },
-        (payload: RealtimePostgresInsertPayload<Message>) => {
-          setMessages((prev) => [...prev, payload.new]);
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'timers', filter: `room_id=eq.${roomId}` },
-        (payload: RealtimePostgresUpdatePayload<TimerRow>) => {
-          setTimer(payload.new);
-          gongPlayedRef.current = false;
-        }
-      )
-      // 既存の channel に追記
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'room_members', filter: `room_id=eq.${roomId}` },
-        () => fetchMembers()
-      )
-      .on(
-        'postgres_changes',
-        { event: 'DELETE', schema: 'public', table: 'room_members', filter: `room_id=eq.${roomId}` },
-        () => fetchMembers()
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_scores', filter: `room_id=eq.${roomId}` }, fetchScores)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_members', filter: `room_id=eq.${roomId}` }, fetchMembers)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${roomId}` }, (payload) => {
+        setMessages((prev) => [...prev, payload.new as Message]);
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'timers', filter: `room_id=eq.${roomId}` }, (payload) => {
+        setTimer(payload.new as TimerRow);
+        gongPlayedRef.current = false;
+      })
       .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    // return () => supabase.removeChannel(channel);
+    return() => void supabase.removeChannel(channel);
   }, [ready, roomId]);
 
-  // タイマー同期
+  // タイマー
   useEffect(() => {
     const iv = setInterval(() => setTick((n) => n + 1), 1000);
     return () => clearInterval(iv);
@@ -208,9 +150,26 @@ export default function RoomPage() {
 
   const remainMs = useMemo(() => {
     if (!timer?.deadline_at) return 0;
-    const deadline = new Date(timer.deadline_at).getTime();
-    return Math.max(0, deadline - Date.now());
+    return Math.max(0, new Date(timer.deadline_at).getTime() - Date.now());
   }, [timer?.deadline_at, tick]);
+
+  const startCountdown = async () => {
+    const total = parseInt(minStr) * 60 + parseInt(secStr);
+    const deadline = new Date(Date.now() + total * 1000).toISOString();
+    await supabase.from('timers').upsert({ room_id: roomId, deadline_at: deadline, duration_seconds: total });
+  };
+
+  const sendMessage = async () => {
+    if (!input.trim()) return;
+    await supabase.from('messages').insert({ room_id: roomId, body: input, user_id: userId });
+    setInput('');
+  };
+
+  const generateTopic = async () => {
+    const res = await fetch('/api/generate-topic', { method: 'POST', body: JSON.stringify({ roomId }) });
+    const data = await res.json();
+    alert(data.topic ?? '生成に失敗しました');
+  };
 
   if (!ready) return <p>Loading...</p>;
 
@@ -218,44 +177,78 @@ export default function RoomPage() {
     <div style={{ maxWidth: 980, margin: '20px auto' }}>
       {/* ヘッダー */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, marginBottom: 16 }}>
-        <Image src="/top.png" alt="Top" width={320} height={80} style={{ height: 'auto' }} />
+        <Image src="/top.png" alt="Top" width={320} height={80} />
         <div style={{ fontWeight: 600 }}>ユーザー名: {username}</div>
       </div>
 
-      {/* メンバー + スコア */}
-      <section style={{ marginBottom: 12 }}>
-        <h3>入室中のユーザー</h3>
-        <ul style={{ listStyle: 'none', paddingLeft: 0 }}>
-          {members.map((m) => (
-            <li key={m.id} style={{ marginBottom: 4 }}>
-              <span style={{ fontWeight: 600, marginRight: 8 }}>{m.username}</span>
-              <span style={{ marginRight: 8 }}>得点: {scores[m.id] ?? 0}</span>
-              <button
-                onClick={() => updateScore(m.id, +1)}
-                style={{ background: '#16a34a', color: '#fff', border: 'none', borderRadius: 6, padding: '2px 8px' }}
-              >
-                +
-              </button>
-              <button
-                onClick={() => updateScore(m.id, -1)}
-                style={{
-                  background: '#dc2626',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: 6,
-                  padding: '2px 8px',
-                  marginLeft: 4,
-                }}
-              >
-                -
-              </button>
-            </li>
+      {/* 入室者一覧 + スコア */}
+      <h3>入室中のユーザー</h3>
+      <ul style={{ listStyle: 'none', paddingLeft: 0 }}>
+        {members.map((m) => (
+          <li key={m.id}>
+            <span style={{ fontWeight: 600 }}>{m.username}</span>　
+            <span>得点: {scores[m.id] ?? 0}</span>　
+            <button onClick={() => updateScore(m.id, +1)}>＋</button>　
+            <button onClick={() => updateScore(m.id, -1)}>－</button>
+          </li>
+        ))}
+      </ul>
+      <p style={{ fontSize: 13, color: '#666' }}>
+        ※得点は全員で共有されます。+ / - ボタンでどのメンバーの得点も変更できます。
+      </p>
+
+      {/* タイマー */}
+      <div style={{ marginTop: 20 }}>
+        <h3>タイマー</h3>
+        <input value={minStr} onChange={(e) => setMinStr(e.target.value)} style={{ width: 40 }} />分　
+        <input value={secStr} onChange={(e) => setSecStr(e.target.value)} style={{ width: 40 }} />秒　
+        <button onClick={startCountdown}>スタート</button>
+        <div style={{ fontSize: 32, fontWeight: 'bold', marginTop: 8 }}>
+          {String(Math.floor(remainMs / 1000 / 60)).padStart(2, '0')}:
+          {String(Math.floor((remainMs / 1000) % 60)).padStart(2, '0')}
+        </div>
+      </div>
+
+      {/* 出題 */}
+      <div style={{ marginTop: 20 }}>
+        <h3>お題生成</h3>
+        <button onClick={generateTopic}>出題</button>
+      </div>
+
+      {/* チャット */}
+      <div style={{ marginTop: 20 }}>
+        <h3>チャット</h3>
+        <div
+          style={{
+            border: '1px solid #ccc',
+            borderRadius: 8,
+            height: 200,
+            overflowY: 'auto',
+            padding: 8,
+            background: '#f9fafb',
+          }}
+        >
+          {messages.map((m) => (
+            <div key={m.id}>
+              <span style={{ color: '#666' }}>
+                {new Date(m.created_at).toLocaleTimeString()} {m.username}：
+              </span>{' '}
+              {m.body}
+            </div>
           ))}
-        </ul>
-        <p style={{ fontSize: 14, color: '#6b7280', marginTop: 8 }}>
-          ※得点は全員で共有されます。+ / - ボタンでどのメンバーの得点も変更可能です。
-        </p>
-      </section>
+        </div>
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          style={{ width: '80%', marginTop: 8 }}
+          placeholder="メッセージを入力..."
+        />
+        <button onClick={sendMessage} style={{ marginLeft: 8 }}>
+          送信
+        </button>
+      </div>
+
+      <audio ref={gongRef} src="/gong.mp3" preload="auto" />
     </div>
   );
 }
