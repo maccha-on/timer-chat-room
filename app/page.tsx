@@ -11,11 +11,20 @@ export default function Home() {
   const [sessionReady, setSessionReady] = useState(false);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [name, setName] = useState('');
+  const [username, setUsername] = useState('');
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(async ({ data }) => {
       if (!data.session) location.href = '/login';
-      else setSessionReady(true);
+      else {
+        setSessionReady(true);
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('username')
+          .eq('id', data.session.user.id)
+          .single();
+        setUsername(profile?.username ?? '(anonymous)');
+      }
     });
   }, []);
 
@@ -36,10 +45,16 @@ export default function Home() {
     if (uerr || !u.user) return alert(uerr?.message ?? 'Not signed in');
     const owner = u.user.id;
 
-    const { data: room, error: rerr } = await supabase.from('rooms').insert({ name, owner }).select().single();
+    const { data: room, error: rerr } = await supabase
+      .from('rooms')
+      .insert({ name, owner })
+      .select()
+      .single();
     if (rerr || !room) return alert(`rooms insert failed: ${rerr?.message}`);
 
-    const { error: merr } = await supabase.from('room_members').insert({ room_id: (room as Room).id, user_id: owner });
+    const { error: merr } = await supabase
+      .from('room_members')
+      .insert({ room_id: (room as Room).id, user_id: owner });
     if (merr) return alert(`room_members insert failed: ${merr.message}`);
 
     location.href = `/rooms/${(room as Room).id}`;
@@ -54,8 +69,9 @@ export default function Home() {
 
   return (
     <div style={{ maxWidth: 720, margin: '20px auto' }}>
-      <div style={{ textAlign: 'center', marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, marginBottom: 16 }}>
         <Image src="/top.png" alt="Top" width={320} height={80} style={{ height: 'auto' }} />
+        <div style={{ fontWeight: 600 }}>ユーザー名: {username}</div>
       </div>
 
       <h1>Rooms</h1>
