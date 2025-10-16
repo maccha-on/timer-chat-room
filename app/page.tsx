@@ -52,9 +52,17 @@ export default function Home() {
       .single();
     if (rerr || !room) return alert(`rooms insert failed: ${rerr?.message}`);
 
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('username')
+      .eq('id', owner)
+      .single();
+    const profileUsernameRaw = (profile?.username ?? (username || '')).trim();
+    const profileUsername = profileUsernameRaw || '(anonymous)';
+
     const { error: merr } = await supabase
       .from('room_members')
-      .insert({ room_id: (room as Room).id, user_id: owner });
+      .insert({ room_id: (room as Room).id, user_id: owner, username: profileUsername });
     if (merr) return alert(`room_members insert failed: ${merr.message}`);
 
     location.href = `/rooms/${(room as Room).id}`;

@@ -68,11 +68,13 @@ export default function RoomPage() {
         .select('username')
         .eq('id', data.session.user.id)
         .single();
-      setUsername(p?.username ?? '(anonymous)');
+      const profileUsernameRaw = (p?.username ?? '').trim();
+      const profileUsername = profileUsernameRaw || '(anonymous)';
+      setUsername(profileUsername);
 
       // ✅ 入室登録
       await supabase.from('room_members').upsert(
-        { room_id: roomId, user_id: data.session.user.id },
+        { room_id: roomId, user_id: data.session.user.id, username: profileUsername },
         { onConflict: 'room_id,user_id' }
       );
 
