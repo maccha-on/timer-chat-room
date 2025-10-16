@@ -1,22 +1,23 @@
-'use client';
+// lib/supabaseClient.ts
 import { createClient } from '@supabase/supabase-js';
 
-/**
- * Supabaseクライアント（Next.jsクライアント側用）
- * .env.local から環境変数を読み取ります。
- */
-export const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  {
-    auth: {
-      persistSession: true,     // セッションをブラウザに保持
-      autoRefreshToken: true,   // トークン期限を自動延長
-    },
-  }
-);
+// Supabase の URL と anon key を環境変数から取得
+// ※ これらは Vercel の「Environment Variables」に設定しておく
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-await supabase.from('room_members').upsert(
-  { room_id, user_id: session.user.id },
-  { onConflict: 'room_id,user_id' }
-);
+// createClient は1度だけ呼び出す
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true, // セッションを維持（ログイン状態保持）
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+  },
+  realtime: {
+    params: {
+      eventsPerSecond: 5, // Realtime購読の更新頻度制御
+    },
+  },
+});
+
+export default supabase;
