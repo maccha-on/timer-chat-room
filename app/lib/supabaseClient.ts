@@ -15,3 +15,8 @@ export const supabase = createClient(
     },
   }
 );
+
+await supabase.from('room_members').upsert(
+  { room_id, user_id: session.user.id },
+  { onConflict: 'room_id,user_id' }
+);

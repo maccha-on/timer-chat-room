@@ -58,20 +58,32 @@ export default function RoomPage() {
         location.href = '/login';
         return;
       }
+
       setReady(true);
       setUserId(data.session.user.id);
-      const { data: p } = await supabase.from('profiles').select('username').eq('id', data.session.user.id).single();
+
+      // ユーザー名取得
+      const { data: p } = await supabase
+        .from('profiles')
+        .select('username')
+        .eq('id', data.session.user.id)
+        .single();
       setUsername(p?.username ?? '(anonymous)');
+
+      // ✅ 入室登録
       await supabase.from('room_members').upsert(
         { room_id: roomId, user_id: data.session.user.id },
         { onConflict: 'room_id,user_id' }
       );
+
+      // ✅ スコア初期化
       await supabase.from('room_scores').upsert(
         { room_id: roomId, user_id: data.session.user.id, score: 0 },
         { onConflict: 'room_id,user_id' }
       );
     })();
   }, [roomId]);
+
 
   // メンバー一覧
   const fetchMembers = async () => {
