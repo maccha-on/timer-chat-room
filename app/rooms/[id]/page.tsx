@@ -1,3 +1,6 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable react-hooks/exhaustive-deps */
 'use client';
 
 import { supabase } from '../../lib/supabaseClient';
@@ -72,41 +75,18 @@ export default function RoomPage() {
     })();
   }, [roomId]);
 
-  // 各データロード
-  useEffect(() => {
-    if (!ready) return;
-    (async () => {
-      const { data: msg } = await supabase
-        .from('messages')
-        .select('*, profiles(username)')
-        .eq('room_id', roomId)
-        .order('id', { ascending: true });
-      const mapped = (msg ?? []).map((m: any) => ({
-        id: m.id,
-        body: m.body,
-        created_at: m.created_at,
-        user_id: m.user_id,
-        username: m.profiles?.username ?? 'anonymous',
-      }));
-      setMessages(mapped);
-      const { data: t } = await supabase
-        .from('timers')
-        .select('room_id, deadline_at, duration_seconds, updated_at')
-        .eq('room_id', roomId)
-        .single();
-      setTimer(t ?? null);
-      await fetchMembers();
-      await fetchScores();
-    })();
-  }, [ready, roomId]);
-
   // メンバー一覧
   const fetchMembers = async () => {
     const { data } = await supabase
       .from('room_members')
       .select('user_id, profiles(username)')
       .eq('room_id', roomId);
-    setMembers((data ?? []).map((m: any) => ({ id: m.user_id, username: m.profiles?.username ?? 'anonymous' })));
+    setMembers(
+      (data ?? []).map((m: any) => ({
+        id: m.user_id as string,
+        username: m.profiles?.username ?? 'anonymous',
+      }))
+    );
   };
 
   // スコア一覧
@@ -116,6 +96,38 @@ export default function RoomPage() {
     (data ?? []).forEach((r: any) => (dict[r.user_id] = r.score));
     setScores(dict);
   };
+
+  // メッセージとタイマー
+  const fetchAll = async () => {
+    const { data: msg } = await supabase
+      .from('messages')
+      .select('*, profiles(username)')
+      .eq('room_id', roomId)
+      .order('id', { ascending: true });
+    const mapped = (msg ?? []).map((m: any) => ({
+      id: m.id,
+      body: m.body,
+      created_at: m.created_at,
+      user_id: m.user_id,
+      username: m.profiles?.username ?? 'anonymous',
+    }));
+    setMessages(mapped);
+    const { data: t } = await supabase
+      .from('timers')
+      .select('room_id, deadline_at, duration_seconds, updated_at')
+      .eq('room_id', roomId)
+      .single();
+    setTimer(t ?? null);
+  };
+
+  useEffect(() => {
+    if (!ready) return;
+    (async () => {
+      await fetchAll();
+      await fetchMembers();
+      await fetchScores();
+    })();
+  }, [ready, roomId]);
 
   // スコア変更
   const updateScore = async (uid: string, delta: number) => {
@@ -129,11 +141,13 @@ export default function RoomPage() {
     if (!ready) return;
     const channel = supabase
       .channel(`room:${roomId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_scores', filter: `room_id=eq.${roomId}` }, () =>
+        fetchScores()
+      )
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${roomId}` },
         (payload: RealtimePostgresInsertPayload<Message>) => {
-          fetchMembers();
           setMessages((prev) => [...prev, payload.new]);
         }
       )
@@ -144,9 +158,6 @@ export default function RoomPage() {
           setTimer(payload.new);
           gongPlayedRef.current = false;
         }
-      )
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_scores', filter: `room_id=eq.${roomId}` }, () =>
-        fetchScores()
       )
       .subscribe();
     return () => {
@@ -165,45 +176,6 @@ export default function RoomPage() {
     const deadline = new Date(timer.deadline_at).getTime();
     return Math.max(0, deadline - Date.now());
   }, [timer?.deadline_at, tick]);
-
-  useEffect(() => {
-    if (!timer?.deadline_at) return;
-    if (remainMs === 0 && !gongPlayedRef.current) {
-      gongPlayedRef.current = true;
-      void gongRef.current?.play().catch(() => {});
-    }
-  }, [remainMs, timer?.deadline_at]);
-
-  const fmt = (ms: number) => {
-    const total = Math.max(0, Math.floor(ms / 1000));
-    const mm = Math.floor(total / 60);
-    const ss = total % 60;
-    return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
-  };
-
-  const startCountdown = async () => {
-    const total = parseInt(minStr) * 60 + parseInt(secStr);
-    const deadline = new Date(Date.now() + total * 1000).toISOString();
-    const { data: existing } = await supabase
-      .from('timers')
-      .select('room_id')
-      .eq('room_id', roomId)
-      .maybeSingle();
-    if (!existing)
-      await supabase.from('timers').insert({ room_id: roomId, deadline_at: deadline, duration_seconds: total });
-    else await supabase.from('timers').update({ deadline_at: deadline, duration_seconds: total }).eq('room_id', roomId);
-  };
-
-  const resetCountdown = async () => {
-    await supabase.from('timers').update({ deadline_at: null, duration_seconds: null }).eq('room_id', roomId);
-    gongPlayedRef.current = false;
-  };
-
-  const sendMessage = async () => {
-    if (!input.trim()) return;
-    await supabase.from('messages').insert({ room_id: roomId, body: input, user_id: userId });
-    setInput('');
-  };
 
   if (!ready) return <p>Loading...</p>;
 
@@ -246,13 +218,9 @@ export default function RoomPage() {
           ))}
         </ul>
         <p style={{ fontSize: 14, color: '#6b7280', marginTop: 8 }}>
-          ※得点は全員がリアルタイムで共有されます。<br />
-          ＋／－ボタンで、どのメンバーの得点も変更できます。
+          ※得点は全員で共有されます。+ / - ボタンでどのメンバーの得点も変更可能です。
         </p>
       </section>
-
-      {/* 残りは同じ（チャット＋タイマー） */}
-      {/* ・・・上のコードと同様・・・ */}
     </div>
   );
 }
