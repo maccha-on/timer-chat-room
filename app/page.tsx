@@ -55,7 +55,7 @@ export default function Home() {
   return (
     <div style={{ maxWidth: 720, margin: '20px auto' }}>
       <div style={{ textAlign: 'center', marginBottom: 16 }}>
-        <Image src="/top.png" alt="Top" width={480} height={120} style={{ height: 'auto' }} />
+        <Image src="/top.png" alt="Top" width={320} height={80} style={{ height: 'auto' }} />
       </div>
 
       <h1>Rooms</h1>

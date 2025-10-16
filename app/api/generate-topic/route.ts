@@ -13,7 +13,7 @@ type RoundRow = { id: number };
 
 const supaAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!, // ← server-only
+  process.env.SUPABASE_SERVICE_ROLE_KEY!, // server-only
 );
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
@@ -26,13 +26,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'roomId/requesterId required' }, { status: 400 });
     }
 
-    // 1) メンバー取得
+    // 1) ルームメンバー取得
     const { data: members, error: memErr } = await supaAdmin
       .from('room_members')
       .select('user_id')
       .eq('room_id', roomId);
 
     if (memErr) throw memErr;
+
     const ids = (members as RoomMemberRow[] | null)?.map((m) => m.user_id) ?? [];
     if (ids.length < 2) {
       return NextResponse.json({ error: 'メンバーが2人以上必要です' }, { status: 400 });
@@ -88,7 +89,6 @@ export async function POST(req: NextRequest) {
   } catch (e: unknown) {
     const message =
       typeof e === 'object' && e !== null && 'message' in e ? String((e as { message: unknown }).message) : 'server error';
-    // 500は伏せつつ詳細はFunction Logsで確認
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

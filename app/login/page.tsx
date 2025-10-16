@@ -15,7 +15,7 @@ export default function LoginPage() {
     if (!name) return alert('ユーザー名を入力してください');
     setBusy(true);
 
-    // sign を受け取らず未使用警告を回避
+    // 未使用変数を出さないように、error のみ取り出す
     const { error: signErr } = await supabase.auth.signInAnonymously();
     if (signErr) {
       setBusy(false);
@@ -44,11 +44,13 @@ export default function LoginPage() {
   return (
     <div style={{ maxWidth: 420, margin: '40px auto' }}>
       <div style={{ textAlign: 'center', marginBottom: 16 }}>
-        <Image src="/top.png" alt="Top" width={480} height={120} style={{ height: 'auto' }} />
+        <Image src="/top.png" alt="Top" width={320} height={80} style={{ height: 'auto' }} />
       </div>
 
       <h1 style={{ marginBottom: 10 }}>ユーザー名で入室</h1>
-      <p style={{ opacity: 0.7, marginBottom: 12 }}>Googleやメールは不要です。任意のユーザー名を入力して入室してください。</p>
+      <p style={{ opacity: 0.7, marginBottom: 12 }}>
+        Googleやメールは不要です。任意のユーザー名を入力して入室してください。
+      </p>
 
       <input
         placeholder="ユーザー名（例: tanaka）"
@@ -77,7 +79,9 @@ export default function LoginPage() {
         {busy ? '入室中…' : '入室'}
       </button>
 
-      <p style={{ opacity: 0.6, marginTop: 10, fontSize: 12 }}>※ 匿名セッションはブラウザに保存されます。サインアウトや保存削除で別人扱いになります。</p>
+      <p style={{ opacity: 0.6, marginTop: 10, fontSize: 12 }}>
+        ※ 匿名セッションはブラウザに保存されます。サインアウトや保存削除で別人扱いになります。
+      </p>
     </div>
   );
 }

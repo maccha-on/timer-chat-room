@@ -4,12 +4,18 @@ import { supabase } from '../../lib/supabaseClient';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Image from 'next/image';
+import type {
+  RealtimePostgresInsertPayload,
+  RealtimePostgresUpdatePayload,
+  RealtimePostgresChangesPayload,
+} from '@supabase/supabase-js';
 
 type Message = {
   id: number;
   user_id: string | null;
   body: string;
   created_at: string;
+  room_id?: string;
 };
 
 type TimerRow = {
@@ -18,6 +24,8 @@ type TimerRow = {
   duration_seconds: number | null; // 入力された合計秒
   updated_at?: string;
 };
+
+type RoundRow = { id: number; topic: string };
 
 export default function RoomPage() {
   const { id } = useParams<{ id: string }>();
@@ -109,23 +117,22 @@ export default function RoomPage() {
       return;
     }
 
-    const latestId = (latest as { id: number; topic: string }).id;
-    const latestTopic = (latest as { id: number; topic: string }).topic;
-    setRoundId(latestId);
+    const l = latest as RoundRow;
+    setRoundId(l.id);
 
     let role: 'presenter' | 'insider' | 'common' | null = null;
     if (userId) {
       const { data: my } = await supabase
         .from('round_roles')
         .select('role')
-        .eq('round_id', latestId)
+        .eq('round_id', l.id)
         .eq('user_id', userId)
         .maybeSingle();
       role = ((my as { role?: 'presenter' | 'insider' | 'common' } | null)?.role) ?? 'common';
     }
 
     setMyRole(role);
-    setRoundTopic(role === 'presenter' || role === 'insider' ? latestTopic : null);
+    setRoundTopic(role === 'presenter' || role === 'insider' ? l.topic : null);
   };
 
   // ========== Realtime 購読 ==========
@@ -135,33 +142,43 @@ export default function RoomPage() {
     const channel = supabase
       .channel(`room:${roomId}`)
 
+      // Chat: 新規メッセージ
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${roomId}` },
-        (payload) => setMessages((prev) => [...prev, payload.new as Message]),
+        (payload: RealtimePostgresInsertPayload<Message>) => {
+          setMessages((prev) => [...prev, payload.new]);
+        },
       )
+
+      // Timer: 更新
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'timers', filter: `room_id=eq.${roomId}` },
-        (payload) => {
-          setTimer(payload.new as TimerRow);
+        (payload: RealtimePostgresUpdatePayload<TimerRow>) => {
+          setTimer(payload.new);
           gongPlayedRef.current = false;
         },
       )
+
+      // Rounds: 新しいラウンドが作られた
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'rounds', filter: `room_id=eq.${roomId}` },
-        async () => {
+        async (_: RealtimePostgresInsertPayload<RoundRow>) => {
           await fetchLatestRoundAndMyRole();
         },
       )
+
+      // Round Roles: 自分の役割が変わった
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'round_roles', filter: `user_id=eq.${userId}` },
-        async () => {
+        async (_: RealtimePostgresChangesPayload<{ role: 'presenter' | 'insider' | 'common' }>) => {
           await fetchLatestRoundAndMyRole();
         },
       )
+
       .subscribe();
 
     return () => {
@@ -180,7 +197,7 @@ export default function RoomPage() {
     if (!timer?.deadline_at) return 0;
     const deadline = new Date(timer.deadline_at).getTime();
     return Math.max(0, deadline - Date.now());
-    // tick で毎秒再計算。余計な依存は入れない（lint警告回避）
+    // 1秒刻みで再計算（tick）
   }, [timer?.deadline_at, tick]);
 
   // 0になったらゴング
@@ -214,7 +231,12 @@ export default function RoomPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ roomId, requesterId: userId }),
       });
-      const json = (await resp.json()) as { roundId?: number; myRole?: 'presenter' | 'insider' | 'common'; topic?: string | null; error?: string };
+      const json = (await resp.json()) as {
+        roundId?: number;
+        myRole?: 'presenter' | 'insider' | 'common';
+        topic?: string | null;
+        error?: string;
+      };
       if (!resp.ok) {
         alert(`お題生成に失敗: ${json.error || 'unknown error'}`);
         return;
@@ -277,7 +299,7 @@ export default function RoomPage() {
       {/* ヘッダー：画像＋退出＋ユーザー名＆役割 */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <div style={{ flex: 1, textAlign: 'center' }}>
-          <Image src="/top.png" alt="Top" width={480} height={120} style={{ height: 'auto' }} />
+          <Image src="/top.png" alt="Top" width={320} height={80} style={{ height: 'auto' }} />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <button
