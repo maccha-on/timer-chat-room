@@ -75,18 +75,42 @@ export default function RoomPage() {
     })();
   }, [roomId]);
 
-  // メンバー一覧
+
+  // メンバー一覧（2段階フェッチ：room_members → profiles）
   const fetchMembers = async () => {
-    const { data } = await supabase
+    // 1) まず room_members から user_id 一覧を取得
+    const { data: rms, error: e1 } = await supabase
       .from('room_members')
-      .select('user_id, profiles(username)')
+      .select('user_id')
       .eq('room_id', roomId);
-    setMembers(
-      (data ?? []).map((m: any) => ({
-        id: m.user_id as string,
-        username: m.profiles?.username ?? 'anonymous',
-      }))
-    );
+
+    if (e1) {
+      console.error('room_members select error', e1.message);
+      setMembers([]);
+      return;
+    }
+
+    const ids = (rms ?? []).map((r) => r.user_id as string);
+    if (ids.length === 0) {
+      setMembers([]);
+      return;
+    }
+
+    // 2) 次に profiles から username を一括取得
+    const { data: profs, error: e2 } = await supabase
+      .from('profiles')
+      .select('id, username')
+      .in('id', ids);
+
+    if (e2) {
+      console.error('profiles select error', e2.message);
+      // username が取れない場合でも ID は出す
+      setMembers(ids.map((id) => ({ id, username: 'anonymous' })));
+      return;
+    }
+
+    const map = new Map<string, string>((profs ?? []).map((p) => [p.id as string, p.username as string]));
+    setMembers(ids.map((id) => ({ id, username: map.get(id) ?? 'anonymous' })));
   };
 
   // スコア一覧
@@ -158,6 +182,17 @@ export default function RoomPage() {
           setTimer(payload.new);
           gongPlayedRef.current = false;
         }
+      )
+      // 既存の channel に追記
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'room_members', filter: `room_id=eq.${roomId}` },
+        () => fetchMembers()
+      )
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'room_members', filter: `room_id=eq.${roomId}` },
+        () => fetchMembers()
       )
       .subscribe();
     return () => {
