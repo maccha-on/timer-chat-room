@@ -4,8 +4,7 @@ import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import { supabase } from './lib/supabaseClient';
 
-type Room = { id: string; name: string };
-type RoomMember = { room_id: string };
+type Room = { id: string; name: string; created_at?: string };
 
 export default function Home() {
   const [sessionReady, setSessionReady] = useState(false);
@@ -30,13 +29,35 @@ export default function Home() {
 
   useEffect(() => {
     if (!sessionReady) return;
-    (async () => {
-      const { data: mem } = await supabase.from('room_members').select('room_id');
-      const ids = (mem as RoomMember[] | null)?.map((m) => m.room_id) ?? [];
-      if (ids.length === 0) return setRooms([]);
-      const { data: rms } = await supabase.from('rooms').select('id,name').in('id', ids);
-      setRooms((rms as Room[] | null) ?? []);
-    })();
+    let cancelled = false;
+
+    const fetchRooms = async () => {
+      const { data, error } = await supabase
+        .from('rooms')
+        .select('id,name,created_at')
+        .order('created_at', { ascending: false });
+      if (cancelled) return;
+      if (error) {
+        console.error('Failed to load rooms', error);
+        setRooms([]);
+        return;
+      }
+      setRooms((data as Room[] | null) ?? []);
+    };
+
+    void fetchRooms();
+
+    const channel = supabase
+      .channel('rooms:all')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms' }, () => {
+        void fetchRooms();
+      })
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      void supabase.removeChannel(channel);
+    };
   }, [sessionReady]);
 
   const createRoom = async () => {
@@ -111,7 +132,7 @@ export default function Home() {
             <a href={`/rooms/${r.id}`}>{r.name}</a>
           </li>
         ))}
-        {rooms.length === 0 && <li style={{ opacity: 0.7 }}>（参加中のルームはまだありません）</li>}
+        {rooms.length === 0 && <li style={{ opacity: 0.7 }}>（利用可能なルームはまだありません）</li>}
       </ul>
     </div>
   );

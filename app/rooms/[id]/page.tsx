@@ -45,7 +45,6 @@ export default function RoomPage() {
 
   const [members, setMembers] = useState<Profile[]>([]);
   const [scores, setScores] = useState<Record<string, number>>({});
-  const [roundRoles, setRoundRoles] = useState<Record<string, Role>>({});
   const [myRole, setMyRole] = useState<Role | null>(null);
   const [currentTopic, setCurrentTopic] = useState<string | null>(null);
   const [hasTopic, setHasTopic] = useState(false);
@@ -69,14 +68,14 @@ export default function RoomPage() {
         return;
       }
 
-      setReady(true);
-      setUserId(data.session.user.id);
+      const uid = data.session.user.id;
+      setUserId(uid);
 
       // ユーザー名取得
       const { data: p } = await supabase
         .from('profiles')
         .select('username')
-        .eq('id', data.session.user.id)
+        .eq('id', uid)
         .single();
       const profileUsernameRaw = (p?.username ?? '').trim();
       const profileUsername = profileUsernameRaw || '(anonymous)';
@@ -84,15 +83,17 @@ export default function RoomPage() {
 
       // ✅ 入室登録
       await supabase.from('room_members').upsert(
-        { room_id: roomId, user_id: data.session.user.id, username: profileUsername },
+        { room_id: roomId, user_id: uid, username: profileUsername },
         { onConflict: 'room_id,user_id' }
       );
 
       // ✅ スコア初期化
       await supabase.from('room_scores').upsert(
-        { room_id: roomId, user_id: data.session.user.id, score: 0 },
+        { room_id: roomId, user_id: uid, score: 0 },
         { onConflict: 'room_id,user_id' }
       );
+
+      setReady(true);
     })();
   }, [roomId]);
 
@@ -142,7 +143,6 @@ export default function RoomPage() {
       }
 
       if (!round) {
-        setRoundRoles({});
         setMyRole(null);
         setCurrentTopic(null);
         setHasTopic(false);
@@ -160,8 +160,6 @@ export default function RoomPage() {
           map[row.user_id] = row.role;
         }
       });
-
-      setRoundRoles(map);
       setHasTopic(Boolean(round.topic));
 
       if (userId) {
@@ -336,10 +334,18 @@ export default function RoomPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ roomId, requesterId: userId }),
       });
-      const data = (await res.json()) as { topic?: string | null; error?: string; roundId?: number | null };
+      const data = (await res.json()) as {
+        topic?: string | null;
+        error?: string;
+        roundId?: number | null;
+        myRole?: Role | null;
+      };
       if (!res.ok) {
         alert(data?.error ?? '生成に失敗しました');
         return;
+      }
+      if (data?.myRole) {
+        setMyRole(data.myRole as Role);
       }
       if (data?.roundId) {
         await loadRound(data.roundId ?? undefined);
@@ -377,6 +383,7 @@ export default function RoomPage() {
     insider: 'インサイダー',
     common: '庶民',
   };
+  const myRoleLabel = myRole ? roleLabels[myRole] : '役割未設定';
   const canSeeTopic = myRole === 'presenter' || myRole === 'insider';
 
   return (
@@ -393,7 +400,10 @@ export default function RoomPage() {
       >
         <Image src="/top.png" alt="Top" width={320} height={80} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <div style={{ fontWeight: 600 }}>ユーザー名: {username}</div>
+          <div>
+            <div style={{ fontWeight: 600 }}>ユーザー名: {username}</div>
+            <div style={{ fontSize: 14, color: '#1f2937', marginTop: 4 }}>役割: {myRoleLabel}</div>
+          </div>
           <button onClick={leaveRoom}>退出</button>
         </div>
       </div>
@@ -404,12 +414,7 @@ export default function RoomPage() {
         {members.map((m) => (
           <li key={m.id} style={{ marginBottom: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <div>
-                <div style={{ fontWeight: 600 }}>{m.username}</div>
-                <div style={{ fontSize: 12, color: '#555' }}>
-                  {roundRoles[m.id] ? roleLabels[roundRoles[m.id]] : '役割未設定'}
-                </div>
-              </div>
+              <div style={{ fontWeight: 600 }}>{m.username}</div>
               <div>得点: {scores[m.id] ?? 0}</div>
               <button onClick={() => updateScore(m.id, +1)}>＋</button>
               <button onClick={() => updateScore(m.id, -1)}>－</button>
@@ -448,7 +453,6 @@ export default function RoomPage() {
         <h3>お題生成（インサイダーゲーム用）</h3>
         <button onClick={generateTopic}>出題</button>
         <div style={{ marginTop: 8, fontSize: 14, color: '#333' }}>
-          <div>あなたの役割: {myRole ? roleLabels[myRole] : '未設定'}</div>
           {hasTopic ? (
             myRole ? (
               canSeeTopic ? (

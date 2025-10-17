@@ -190,6 +190,9 @@ create policy "Room owners can view their rooms"
 create policy "Room members can view rooms"
   on rooms for select
   using (is_room_member(rooms.id));
+create policy "Authenticated users can discover rooms"
+  on rooms for select
+  using (auth.uid() is not null);
 
 alter table room_members enable row level security;
 create policy "Members can view fellow members"
