@@ -99,19 +99,43 @@ export default function RoomPage() {
 
 
   // メンバー一覧
-  const fetchMembers = async () => {
-    const { data: rms } = await supabase
-      .from('room_members')
-      .select('user_id, username')
-      .eq('room_id', roomId)
-      .order('joined_at', { ascending: true });
-    setMembers(
-      (rms ?? []).map((row: any) => ({
-        id: row.user_id as string,
-        username: (row.username as string | null | undefined) ?? 'anonymous',
-      }))
-    );
-  };
+  const fetchMembers = useCallback(async () => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+
+    if (!token) {
+      setMembers([]);
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/room-members?roomId=${roomId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      });
+
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as { message?: string };
+        console.error('Failed to load room members', body.message ?? response.statusText);
+        setMembers([]);
+        return;
+      }
+
+      const body = (await response.json()) as {
+        members?: { user_id: string; username?: string | null }[];
+      };
+
+      setMembers(
+        (body.members ?? []).map((row) => ({
+          id: row.user_id,
+          username: (row.username ?? 'anonymous').trim() || 'anonymous',
+        }))
+      );
+    } catch (error) {
+      console.error('Failed to load room members', error);
+      setMembers([]);
+    }
+  }, [roomId]);
 
   const fetchScores = async () => {
     const { data } = await supabase.from('room_scores').select('*').eq('room_id', roomId);
@@ -205,7 +229,12 @@ export default function RoomPage() {
       await fetchMembers();
       await fetchScores();
     })();
-  }, [ready, roomId]);
+  }, [ready, roomId, fetchMembers]);
+
+  useEffect(() => {
+    if (!ready || !userId) return;
+    void loadRound();
+  }, [ready, roomId, userId, loadRound]);
 
   useEffect(() => {
     if (!ready || !userId) return;
@@ -224,7 +253,13 @@ export default function RoomPage() {
     const channel = supabase
       .channel(`room:${roomId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'room_scores', filter: `room_id=eq.${roomId}` }, fetchScores)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_members', filter: `room_id=eq.${roomId}` }, fetchMembers)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'room_members', filter: `room_id=eq.${roomId}` },
+        () => {
+          void fetchMembers();
+        }
+      )
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${roomId}` }, (payload) => {
         const inserted = payload.new as Message;
         const displayName =
@@ -250,7 +285,7 @@ export default function RoomPage() {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [ready, roomId, loadRound, usernameMap]);
+  }, [ready, roomId, loadRound, usernameMap, fetchMembers]);
 
   // タイマー
   useEffect(() => {
