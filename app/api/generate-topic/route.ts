@@ -11,6 +11,8 @@ type Body = { roomId: string; requesterId: string };
 type RoomMemberRow = { user_id: string };
 type RoundRow = { id: number };
 
+const fallbackTopics = ['りんご', 'コーヒー', '自転車', '本', '時計', '橋', '山', '海', '椅子', '電話'];
+
 const supaAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!, // server-only
