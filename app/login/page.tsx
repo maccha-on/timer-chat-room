@@ -22,20 +22,31 @@ export default function LoginPage() {
       return alert(`anonymous sign-in failed: ${signErr.message}`);
     }
 
-    const { data: u } = await supabase.auth.getUser();
-    const uid = u.user?.id;
-    if (!uid) {
+    const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
+    if (sessionErr || !sessionData.session) {
+      setBusy(false);
+      return alert(sessionErr?.message ?? 'セッション情報の取得に失敗しました');
+    }
+
+    const userId = sessionData.session.user?.id;
+    if (!userId) {
       setBusy(false);
       return alert('サインインに失敗しました（uidなし）');
     }
 
-    const { error: upsertErr } = await supabase
-      .from('profiles')
-      .upsert({ id: uid, username: name }, { onConflict: 'id' });
+    const res = await fetch('/api/profile', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${sessionData.session.access_token}`,
+      },
+      body: JSON.stringify({ username: name }),
+    });
 
-    if (upsertErr) {
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({ message: 'unknown error' }));
       setBusy(false);
-      return alert(`ユーザー名の登録に失敗: ${upsertErr.message}`);
+      return alert(`ユーザー名の登録に失敗: ${payload.message}`);
     }
 
     router.replace('/');
