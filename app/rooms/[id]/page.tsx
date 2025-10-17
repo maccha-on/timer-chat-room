@@ -445,7 +445,7 @@ export default function RoomPage() {
 
       {/* 出題 */}
       <div style={{ marginTop: 20 }}>
-        <h3>お題生成</h3>
+        <h3>お題生成（インサイダーゲーム用）</h3>
         <button onClick={generateTopic}>出題</button>
         <div style={{ marginTop: 8, fontSize: 14, color: '#333' }}>
           {hasTopic ? (
