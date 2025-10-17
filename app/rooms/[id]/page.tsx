@@ -100,12 +100,17 @@ export default function RoomPage() {
 
   // メンバー一覧
   const fetchMembers = async () => {
-    const { data: rms } = await supabase.from('room_members').select('user_id').eq('room_id', roomId);
-    const ids = (rms ?? []).map((r) => r.user_id as string);
-    if (ids.length === 0) return setMembers([]);
-    const { data: profs } = await supabase.from('profiles').select('id, username').in('id', ids);
-    const map = new Map<string, string>((profs ?? []).map((p) => [p.id as string, p.username as string]));
-    setMembers(ids.map((id) => ({ id, username: map.get(id) ?? 'anonymous' })));
+    const { data: rms } = await supabase
+      .from('room_members')
+      .select('user_id, username')
+      .eq('room_id', roomId)
+      .order('joined_at', { ascending: true });
+    setMembers(
+      (rms ?? []).map((row: any) => ({
+        id: row.user_id as string,
+        username: (row.username as string | null | undefined) ?? 'anonymous',
+      }))
+    );
   };
 
   const fetchScores = async () => {
