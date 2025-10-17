@@ -2,47 +2,94 @@
 
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
+import type { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabaseClient';
 
 type Room = { id: string; name: string; created_at?: string };
 
 export default function Home() {
   const [sessionReady, setSessionReady] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data }) => {
-      if (!data.session) location.href = '/login';
-      else {
-        setSessionReady(true);
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('username')
-          .eq('id', data.session.user.id)
-          .single();
-        setUsername(profile?.username ?? '(anonymous)');
+    let active = true;
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (!active) return;
+      if (!data.session) {
+        location.href = '/login';
+        return;
       }
+      setSession(data.session);
+      setSessionReady(true);
     });
+
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      if (!newSession) {
+        location.href = '/login';
+        return;
+      }
+      setSession(newSession);
+      setSessionReady(true);
+    });
+
+    return () => {
+      active = false;
+      subscription?.subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
-    if (!sessionReady) return;
+    if (!session) return;
+    let cancelled = false;
+
+    supabase
+      .from('profiles')
+      .select('username')
+      .eq('id', session.user.id)
+      .single()
+      .then(({ data }) => {
+        if (!cancelled) {
+          setUsername(data?.username ?? '(anonymous)');
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
+
+  useEffect(() => {
+    if (!session) return;
     let cancelled = false;
 
     const fetchRooms = async () => {
-      const { data, error } = await supabase
-        .from('rooms')
-        .select('id,name,created_at')
-        .order('created_at', { ascending: false });
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) {
+        location.href = '/login';
+        return;
+      }
+
+      const response = await fetch('/api/rooms', {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      });
+
       if (cancelled) return;
-      if (error) {
-        console.error('Failed to load rooms', error);
+
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as { message?: string };
+        console.error('Failed to load rooms', body.message ?? response.statusText);
         setRooms([]);
         return;
       }
-      setRooms((data as Room[] | null) ?? []);
+
+      const body = (await response.json()) as { rooms?: Room[] };
+      setRooms(body.rooms ?? []);
     };
 
     void fetchRooms();
@@ -58,7 +105,7 @@ export default function Home() {
       cancelled = true;
       void supabase.removeChannel(channel);
     };
-  }, [sessionReady]);
+  }, [session]);
 
   const createRoom = async () => {
     if (!name.trim()) return;
