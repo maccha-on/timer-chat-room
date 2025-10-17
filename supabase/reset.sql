@@ -15,6 +15,10 @@ drop table if exists room_members cascade;
 drop table if exists rooms cascade;
 drop table if exists profiles cascade;
 drop function if exists set_updated_at() cascade;
+drop function if exists is_round_member(bigint, uuid) cascade;
+drop function if exists is_round_member(bigint) cascade;
+drop function if exists is_room_member(uuid, uuid) cascade;
+drop function if exists is_room_member(uuid) cascade;
 
 do $$ begin
   if not exists (select 1 from pg_extension where extname = 'pgcrypto') then
@@ -112,6 +116,58 @@ create table round_roles (
 );
 create index round_roles_user_idx on round_roles (user_id);
 
+-- Helper functions ----------------------------------------------------------
+create or replace function is_room_member(target_room uuid, target_user uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists(
+    select 1
+    from room_members
+    where room_id = target_room
+      and user_id = target_user
+  );
+$$;
+
+create or replace function is_room_member(target_room uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select is_room_member(target_room, auth.uid());
+$$;
+
+create or replace function is_round_member(target_round bigint, target_user uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists(
+    select 1
+    from rounds r
+    join room_members rm on rm.room_id = r.room_id
+    where r.id = target_round
+      and rm.user_id = target_user
+  );
+$$;
+
+create or replace function is_round_member(target_round bigint)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select is_round_member(target_round, auth.uid());
+$$;
+
 -- Row Level Security --------------------------------------------------------
 
 alter table profiles enable row level security;
@@ -128,24 +184,12 @@ create policy "Room owners manage their rooms"
   on rooms for all
   using (auth.uid() = owner)
   with check (auth.uid() = owner);
-create policy "Room members can view rooms"
-  on rooms for select
-  using (exists (
-    select 1
-    from room_members rm
-    where rm.room_id = rooms.id
-      and rm.user_id = auth.uid()
-  ));
+
 
 alter table room_members enable row level security;
 create policy "Members can view fellow members"
   on room_members for select
-  using (exists (
-    select 1
-    from room_members rm
-    where rm.room_id = room_members.room_id
-      and rm.user_id = auth.uid()
-  ));
+
 create policy "Users manage their own membership"
   on room_members for insert
   with check (auth.uid() = user_id);
@@ -160,141 +204,40 @@ create policy "Users can leave rooms"
 alter table room_scores enable row level security;
 create policy "Members can view scores"
   on room_scores for select
-  using (exists (
-    select 1
-    from room_members rm
-    where rm.room_id = room_scores.room_id
-      and rm.user_id = auth.uid()
-  ));
-create policy "Room members can upsert scores"
-  on room_scores for insert
-  with check (
-    exists (
-      select 1
-      from room_members rm
-      where rm.room_id = room_scores.room_id
-        and rm.user_id = room_scores.user_id
-    )
-    and exists (
-      select 1
-      from room_members rm
-      where rm.room_id = room_scores.room_id
-        and rm.user_id = auth.uid()
-    )
-  );
-create policy "Room members can update scores"
-  on room_scores for update
-  using (exists (
-    select 1
-    from room_members rm
-    where rm.room_id = room_scores.room_id
-      and rm.user_id = auth.uid()
-  ))
-  with check (
-    exists (
-      select 1
-      from room_members rm
-      where rm.room_id = room_scores.room_id
-        and rm.user_id = room_scores.user_id
-    )
-  );
-create policy "Room members can delete scores"
-  on room_scores for delete
-  using (exists (
-    select 1
-    from room_members rm
-    where rm.room_id = room_scores.room_id
-      and rm.user_id = auth.uid()
-  ));
+
 
 alter table messages enable row level security;
 create policy "Members can view room messages"
   on messages for select
-  using (exists (
-    select 1
-    from room_members rm
-    where rm.room_id = messages.room_id
-      and rm.user_id = auth.uid()
-  ));
+
 create policy "Members can post messages"
   on messages for insert
   with check (
     auth.uid() = user_id
-    and exists (
-      select 1
-      from room_members rm
-      where rm.room_id = messages.room_id
-        and rm.user_id = auth.uid()
-    )
+
   );
 
 alter table timers enable row level security;
 create policy "Members can view timers"
   on timers for select
-  using (exists (
-    select 1
-    from room_members rm
-    where rm.room_id = timers.room_id
-      and rm.user_id = auth.uid()
-  ));
-create policy "Members can upsert timers"
-  on timers for all
-  using (exists (
-    select 1
-    from room_members rm
-    where rm.room_id = timers.room_id
-      and rm.user_id = auth.uid()
-  ))
-  with check (
-    exists (
-      select 1
-      from room_members rm
-      where rm.room_id = timers.room_id
-        and rm.user_id = auth.uid()
-    )
+
   );
 
 alter table rounds enable row level security;
 create policy "Room members can view rounds"
   on rounds for select
-  using (exists (
-    select 1
-    from room_members rm
-    where rm.room_id = rounds.room_id
-      and rm.user_id = auth.uid()
-  ));
+
 create policy "Room members can insert rounds"
   on rounds for insert
   with check (
     auth.uid() = created_by
-    and exists (
-      select 1
-      from room_members rm
-      where rm.room_id = rounds.room_id
-        and rm.user_id = auth.uid()
-    )
+
   );
 
 alter table round_roles enable row level security;
 create policy "Room members can view round roles"
   on round_roles for select
-  using (exists (
-    select 1
-    from rounds r
-    join room_members rm on rm.room_id = r.room_id
-    where r.id = round_roles.round_id
-      and rm.user_id = auth.uid()
-  ));
-create policy "Room members can insert round roles"
-  on round_roles for insert
-  with check (
-    exists (
-      select 1
-      from rounds r
-      join room_members rm on rm.room_id = r.room_id
-      where r.id = round_roles.round_id
-        and rm.user_id = auth.uid()
-    )
+
   );
 
 -- Realtime publication ------------------------------------------------------
