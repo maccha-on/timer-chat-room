@@ -68,11 +68,13 @@ export default function RoomPage() {
         .select('username')
         .eq('id', data.session.user.id)
         .single();
-      setUsername(p?.username ?? '(anonymous)');
+      const profileUsernameRaw = (p?.username ?? '').trim();
+      const profileUsername = profileUsernameRaw || '(anonymous)';
+      setUsername(profileUsername);
 
       // ✅ 入室登録
       await supabase.from('room_members').upsert(
-        { room_id: roomId, user_id: data.session.user.id },
+        { room_id: roomId, user_id: data.session.user.id, username: profileUsername },
         { onConflict: 'room_id,user_id' }
       );
 
@@ -151,24 +153,78 @@ export default function RoomPage() {
       })
       .subscribe();
     // return () => supabase.removeChannel(channel);
-    return() => void supabase.removeChannel(channel);
+    return () => {
+      void supabase.removeChannel(channel);
+    };
   }, [ready, roomId]);
 
   // タイマー
   useEffect(() => {
+    if (!timer?.deadline_at) return undefined;
     const iv = setInterval(() => setTick((n) => n + 1), 1000);
     return () => clearInterval(iv);
-  }, []);
+  }, [timer?.deadline_at]);
 
   const remainMs = useMemo(() => {
-    if (!timer?.deadline_at) return 0;
-    return Math.max(0, new Date(timer.deadline_at).getTime() - Date.now());
-  }, [timer?.deadline_at, tick]);
+    if (!timer) return 0;
+    if (timer.deadline_at) {
+      return Math.max(0, new Date(timer.deadline_at).getTime() - Date.now());
+    }
+    if (typeof timer.duration_seconds === 'number') {
+      return Math.max(0, timer.duration_seconds * 1000);
+    }
+    return 0;
+  }, [timer?.deadline_at, timer?.duration_seconds, tick]);
+
+  useEffect(() => {
+    if (!timer) return;
+    if (remainMs > 0) return;
+    if ((timer.duration_seconds ?? 0) <= 0) return;
+    const audio = gongRef.current;
+    if (!audio || gongPlayedRef.current) return;
+    gongPlayedRef.current = true;
+    audio.currentTime = 0;
+    void audio.play().catch(() => {
+      // ignore playback errors (e.g., browser restrictions)
+    });
+  }, [remainMs, timer?.duration_seconds]);
+
+  const isRunning = Boolean(timer?.deadline_at) && remainMs > 0;
+  const isPaused = !timer?.deadline_at && (timer?.duration_seconds ?? 0) > 0;
 
   const startCountdown = async () => {
-    const total = parseInt(minStr) * 60 + parseInt(secStr);
+    const minutes = Number.parseInt(minStr, 10);
+    const seconds = Number.parseInt(secStr, 10);
+    const safeMinutes = Number.isFinite(minutes) ? minutes : 0;
+    const safeSeconds = Number.isFinite(seconds) ? seconds : 0;
+    const total = Math.max(0, safeMinutes * 60 + safeSeconds);
+    if (total <= 0) {
+      await supabase.from('timers').upsert({ room_id: roomId, deadline_at: null, duration_seconds: 0 });
+      return;
+    }
     const deadline = new Date(Date.now() + total * 1000).toISOString();
-    await supabase.from('timers').upsert({ room_id: roomId, deadline_at: deadline, duration_seconds: total });
+    await supabase
+      .from('timers')
+      .upsert({ room_id: roomId, deadline_at: deadline, duration_seconds: total });
+  };
+
+  const pauseCountdown = async () => {
+    if (!timer?.deadline_at) return;
+    const remainingSeconds = Math.max(0, Math.ceil(remainMs / 1000));
+    await supabase
+      .from('timers')
+      .update({ deadline_at: null, duration_seconds: remainingSeconds })
+      .eq('room_id', roomId);
+  };
+
+  const resumeCountdown = async () => {
+    const remainingSeconds = Math.max(0, timer?.duration_seconds ?? 0);
+    if (remainingSeconds <= 0) return;
+    const deadline = new Date(Date.now() + remainingSeconds * 1000).toISOString();
+    await supabase
+      .from('timers')
+      .update({ deadline_at: deadline })
+      .eq('room_id', roomId);
   };
 
   const sendMessage = async () => {
@@ -215,6 +271,16 @@ export default function RoomPage() {
         <input value={minStr} onChange={(e) => setMinStr(e.target.value)} style={{ width: 40 }} />分　
         <input value={secStr} onChange={(e) => setSecStr(e.target.value)} style={{ width: 40 }} />秒　
         <button onClick={startCountdown}>スタート</button>
+        {isRunning ? (
+          <button onClick={pauseCountdown} style={{ marginLeft: 8 }}>
+            一時停止
+          </button>
+        ) : null}
+        {isPaused ? (
+          <button onClick={resumeCountdown} style={{ marginLeft: 8 }}>
+            再開
+          </button>
+        ) : null}
         <div style={{ fontSize: 32, fontWeight: 'bold', marginTop: 8 }}>
           {String(Math.floor(remainMs / 1000 / 60)).padStart(2, '0')}:
           {String(Math.floor((remainMs / 1000) % 60)).padStart(2, '0')}
