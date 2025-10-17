@@ -39,24 +39,37 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'メンバーが2人以上必要です' }, { status: 400 });
     }
 
+    if (!ids.includes(requesterId)) {
+      return NextResponse.json({ error: 'ルームに参加していません' }, { status: 403 });
+    }
+
     // 2) お題生成
     const prompt =
       '日本語で、大人ならほとんどの人が知っている一般名詞を1語だけ出してください。' +
       '固有名詞や専門用語は避け、出力は単語のみ（記号・説明なし）。';
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: 'You are a helpful topic generator.' },
-        { role: 'user', content: prompt },
-      ],
-      temperature: 0.7,
-      max_tokens: 10,
-    });
+    const completion = await openai.chat.completions
+      .create({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: 'You are a helpful topic generator.' },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0.7,
+        max_tokens: 10,
+      })
+      .catch((err: unknown) => {
+        const message =
+          typeof err === 'object' && err !== null && 'message' in err
+            ? String((err as { message: unknown }).message)
+            : 'OpenAI API request failed';
+        throw new Error(message);
+      });
 
-    let topic = completion.choices[0]?.message?.content?.trim() ?? '';
-    topic = topic.replace(/[^\p{L}\p{N}\u3000\u3040-\u30FF\u4E00-\u9FFF]/gu, '');
-    if (!topic) return NextResponse.json({ error: 'お題生成に失敗しました' }, { status: 500 });
+    const topic = completion.choices[0]?.message?.content?.trim()?.replace(/[^\p{L}\p{N}\u3000\u3040-\u30FF\u4E00-\u9FFF]/gu, '') ?? '';
+    if (!topic) {
+      throw new Error('OpenAIから有効なお題を取得できませんでした。');
+    }
 
     // 3) 役割抽選
     const shuffled = [...ids].sort(() => Math.random() - 0.5);

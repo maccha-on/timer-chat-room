@@ -2,42 +2,110 @@
 
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
+import type { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabaseClient';
 
-type Room = { id: string; name: string };
-type RoomMember = { room_id: string };
+type Room = { id: string; name: string; created_at?: string };
 
 export default function Home() {
   const [sessionReady, setSessionReady] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data }) => {
-      if (!data.session) location.href = '/login';
-      else {
-        setSessionReady(true);
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('username')
-          .eq('id', data.session.user.id)
-          .single();
-        setUsername(profile?.username ?? '(anonymous)');
+    let active = true;
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (!active) return;
+      if (!data.session) {
+        location.href = '/login';
+        return;
       }
+      setSession(data.session);
+      setSessionReady(true);
     });
+
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      if (!newSession) {
+        location.href = '/login';
+        return;
+      }
+      setSession(newSession);
+      setSessionReady(true);
+    });
+
+    return () => {
+      active = false;
+      subscription?.subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
-    if (!sessionReady) return;
-    (async () => {
-      const { data: mem } = await supabase.from('room_members').select('room_id');
-      const ids = (mem as RoomMember[] | null)?.map((m) => m.room_id) ?? [];
-      if (ids.length === 0) return setRooms([]);
-      const { data: rms } = await supabase.from('rooms').select('id,name').in('id', ids);
-      setRooms((rms as Room[] | null) ?? []);
-    })();
-  }, [sessionReady]);
+    if (!session) return;
+    let cancelled = false;
+
+    supabase
+      .from('profiles')
+      .select('username')
+      .eq('id', session.user.id)
+      .single()
+      .then(({ data }) => {
+        if (!cancelled) {
+          setUsername(data?.username ?? '(anonymous)');
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
+
+  useEffect(() => {
+    if (!session) return;
+    let cancelled = false;
+
+    const fetchRooms = async () => {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) {
+        location.href = '/login';
+        return;
+      }
+
+      const response = await fetch('/api/rooms', {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      });
+
+      if (cancelled) return;
+
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as { message?: string };
+        console.error('Failed to load rooms', body.message ?? response.statusText);
+        setRooms([]);
+        return;
+      }
+
+      const body = (await response.json()) as { rooms?: Room[] };
+      setRooms(body.rooms ?? []);
+    };
+
+    void fetchRooms();
+
+    const channel = supabase
+      .channel('rooms:all')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms' }, () => {
+        void fetchRooms();
+      })
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      void supabase.removeChannel(channel);
+    };
+  }, [session]);
 
   const createRoom = async () => {
     if (!name.trim()) return;
@@ -52,9 +120,17 @@ export default function Home() {
       .single();
     if (rerr || !room) return alert(`rooms insert failed: ${rerr?.message}`);
 
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('username')
+      .eq('id', owner)
+      .single();
+    const profileUsernameRaw = (profile?.username ?? (username || '')).trim();
+    const profileUsername = profileUsernameRaw || '(anonymous)';
+
     const { error: merr } = await supabase
       .from('room_members')
-      .insert({ room_id: (room as Room).id, user_id: owner });
+      .insert({ room_id: (room as Room).id, user_id: owner, username: profileUsername });
     if (merr) return alert(`room_members insert failed: ${merr.message}`);
 
     location.href = `/rooms/${(room as Room).id}`;
@@ -103,7 +179,7 @@ export default function Home() {
             <a href={`/rooms/${r.id}`}>{r.name}</a>
           </li>
         ))}
-        {rooms.length === 0 && <li style={{ opacity: 0.7 }}>（参加中のルームはまだありません）</li>}
+        {rooms.length === 0 && <li style={{ opacity: 0.7 }}>（利用可能なルームはまだありません）</li>}
       </ul>
     </div>
   );
