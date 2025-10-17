@@ -234,9 +234,26 @@ export default function RoomPage() {
   };
 
   const generateTopic = async () => {
-    const res = await fetch('/api/generate-topic', { method: 'POST', body: JSON.stringify({ roomId }) });
-    const data = await res.json();
-    alert(data.topic ?? '生成に失敗しました');
+    if (!userId) {
+      alert('ユーザー情報の取得に失敗しました');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/generate-topic', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomId, requesterId: userId }),
+      });
+      const data = (await res.json()) as { topic?: string | null; error?: string };
+      if (!res.ok) {
+        alert(data?.error ?? '生成に失敗しました');
+        return;
+      }
+      alert(data.topic ?? '生成に失敗しました');
+    } catch {
+      alert('生成に失敗しました');
+    }
   };
 
   if (!ready) return <p>Loading...</p>;
