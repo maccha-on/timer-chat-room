@@ -236,6 +236,11 @@ export default function RoomPage() {
     void loadRound();
   }, [ready, roomId, userId, loadRound]);
 
+  useEffect(() => {
+    if (!ready || !userId) return;
+    void loadRound();
+  }, [ready, roomId, userId, loadRound]);
+
   const updateScore = async (uid: string, delta: number) => {
     const newVal = (scores[uid] ?? 0) + delta;
     setScores((prev) => ({ ...prev, [uid]: newVal }));
@@ -485,7 +490,7 @@ export default function RoomPage() {
 
       {/* 出題 */}
       <div style={{ marginTop: 20 }}>
-        <h3>お題生成</h3>
+        <h3>お題生成（インサイダーゲーム用）</h3>
         <button onClick={generateTopic}>出題</button>
         <div style={{ marginTop: 8, fontSize: 14, color: '#333' }}>
           {hasTopic ? (
