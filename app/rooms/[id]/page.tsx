@@ -52,6 +52,14 @@ export default function RoomPage() {
   const gongRef = useRef<HTMLAudioElement | null>(null);
   const gongPlayedRef = useRef(false);
 
+  const usernameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    members.forEach((m) => {
+      map.set(m.id, m.username);
+    });
+    return map;
+  }, [members]);
+
   // 認証と入室登録
   useEffect(() => {
     (async () => {
@@ -215,7 +223,10 @@ export default function RoomPage() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'room_scores', filter: `room_id=eq.${roomId}` }, fetchScores)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'room_members', filter: `room_id=eq.${roomId}` }, fetchMembers)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${roomId}` }, (payload) => {
-        setMessages((prev) => [...prev, payload.new as Message]);
+        const inserted = payload.new as Message;
+        const displayName =
+          (inserted.user_id ? usernameMap.get(inserted.user_id) : undefined) ?? inserted.username ?? 'anonymous';
+        setMessages((prev) => [...prev, { ...inserted, username: displayName }]);
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'timers', filter: `room_id=eq.${roomId}` }, (payload) => {
         setTimer(payload.new as TimerRow);
@@ -236,7 +247,7 @@ export default function RoomPage() {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [ready, roomId, loadRound]);
+  }, [ready, roomId, loadRound, usernameMap]);
 
   // タイマー
   useEffect(() => {
@@ -338,8 +349,10 @@ export default function RoomPage() {
       } else {
         alert('あなたの役割ではお題は表示されません');
       }
-    } catch {
-      alert('生成に失敗しました');
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : typeof err === 'string' ? err : '生成に失敗しました';
+      alert(message);
     }
   };
 
