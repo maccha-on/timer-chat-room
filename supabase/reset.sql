@@ -184,17 +184,12 @@ create policy "Room owners manage their rooms"
   on rooms for all
   using (auth.uid() = owner)
   with check (auth.uid() = owner);
-create policy "Room owners can view their rooms"
-  on rooms for select
-  using (auth.uid() = owner);
-create policy "Room members can view rooms"
-  on rooms for select
-  using (is_room_member(rooms.id));
+
 
 alter table room_members enable row level security;
 create policy "Members can view fellow members"
   on room_members for select
-  using (is_room_member(room_members.room_id));
+
 create policy "Users manage their own membership"
   on room_members for insert
   with check (auth.uid() = user_id);
@@ -209,64 +204,40 @@ create policy "Users can leave rooms"
 alter table room_scores enable row level security;
 create policy "Members can view scores"
   on room_scores for select
-  using (is_room_member(room_scores.room_id));
-create policy "Room members can upsert scores"
-  on room_scores for insert
-  with check (
-    is_room_member(room_scores.room_id, room_scores.user_id)
-    and is_room_member(room_scores.room_id)
-  );
-create policy "Room members can update scores"
-  on room_scores for update
-  using (is_room_member(room_scores.room_id))
-  with check (
-    is_room_member(room_scores.room_id, room_scores.user_id)
-  );
-create policy "Room members can delete scores"
-  on room_scores for delete
-  using (is_room_member(room_scores.room_id));
+
 
 alter table messages enable row level security;
 create policy "Members can view room messages"
   on messages for select
-  using (is_room_member(messages.room_id));
+
 create policy "Members can post messages"
   on messages for insert
   with check (
     auth.uid() = user_id
-    and is_room_member(messages.room_id)
+
   );
 
 alter table timers enable row level security;
 create policy "Members can view timers"
   on timers for select
-  using (is_room_member(timers.room_id));
-create policy "Members can upsert timers"
-  on timers for all
-  using (is_room_member(timers.room_id))
-  with check (
-    is_room_member(timers.room_id)
+
   );
 
 alter table rounds enable row level security;
 create policy "Room members can view rounds"
   on rounds for select
-  using (is_room_member(rounds.room_id));
+
 create policy "Room members can insert rounds"
   on rounds for insert
   with check (
     auth.uid() = created_by
-    and is_room_member(rounds.room_id)
+
   );
 
 alter table round_roles enable row level security;
 create policy "Room members can view round roles"
   on round_roles for select
-  using (is_round_member(round_roles.round_id));
-create policy "Room members can insert round roles"
-  on round_roles for insert
-  with check (
-    is_round_member(round_roles.round_id)
+
   );
 
 -- Realtime publication ------------------------------------------------------
