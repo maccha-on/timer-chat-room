@@ -534,7 +534,7 @@ export default function RoomPage() {
           gap: 16,
         }}
       >
-        <Image src="/top.png" alt="Top" width={320} height={80} style={{ height: 'auto' }} />
+        <Image src="/top.png" alt="Top" width={160} height={40} style={{ height: 'auto' }} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
           <div style={{ fontWeight: 600 }}>ユーザー名: {username}</div>
           <button onClick={leaveRoom}>退出</button>
@@ -569,9 +569,9 @@ export default function RoomPage() {
                     key={member.id}
                     style={{
                       // border: '1px solid #e5e7eb',
-                      borderRadius: 8,
+                      // borderRadius: 8,
                       padding: '2px 12px',
-                      background: '#fff',
+                      background: '#fdfdee',
                       display: 'flex',
                       alignItems: 'center',
                       gap: 12,
@@ -690,13 +690,13 @@ export default function RoomPage() {
           maxWidth: 960,
         }}
       >
-        <h3 style={{ marginTop: 0, marginBottom: 4 }}>インサイダーゲーム用 ルール例</h3>
+        <h3 style={{ marginTop: 0, marginBottom: 4 , fontSize: '0.９rem' }}>インサイダーゲーム用 ルール例</h3>
         <p style={{ margin: '1px 0px', fontSize: '0.8rem' }}>　1. マスターはお題を確認し、他のプレイヤーの質問にYes/Noで答えます。</p>
         <p style={{ margin: '1px 0px', fontSize: '0.8rem' }}>　2. 全員でお題を推理します。インサイダーは正体を隠しつつ、正解が出るように誘導します。</p>
         <p style={{ margin: '1px 0px', fontSize: '0.8rem' }}>　3. 庶民は協力してお題を推理し、制限時間内に答えを導きます。</p>
         <p style={{ margin: '1px 0px', fontSize: '0.8rem' }}>　4. 正解が出たら、インサイダーが誰かを話し合って投票します。</p>
         <p style={{ margin: '1px 0px', fontSize: '0.8rem' }}>　（時間の目安 お題当て 5～12分、インサイダー当て 3～5分）</p>
-        <p style={{ margin: '4px 0px', fontSize: '0.8rem' }}>得点:</p>
+        <p style={{ margin: '4px 4px', fontSize: '0.8rem' }}>得点:</p>
         <p style={{ margin: '1px 0px', fontSize: '0.8rem' }}>　お題当てに失敗: 全員 -1点</p>
         <p style={{ margin: '1px 0px', fontSize: '0.8rem' }}>　インサイダー推理に成功: インサイダー以外 +1点、お題を当てた人 +1点（庶民のみ）</p>
         <p style={{ margin: '1px 0px', fontSize: '0.8rem' }}>　インサイダー推理に失敗: インサイダー +1点、お題を当てた人 +1点</p>
