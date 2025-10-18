@@ -453,14 +453,14 @@ export default function RoomPage() {
     }
   };
 
-  const generateTopic = async () => {
+  const generateTopic = async (difficulty: 'normal' | 'hard' | 'expert') => {
     if (!userId) return;
 
     try {
       const response = await fetch('/api/generate-topic', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roomId, requesterId: userId }),
+        body: JSON.stringify({ roomId, requesterId: userId, difficulty }),
       });
 
       const payload = (await response.json()) as {
@@ -619,11 +619,9 @@ export default function RoomPage() {
               <div style={{ fontSize: 14, color: '#1f2937' }}>役割: {myRoleLabel}</div>
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {[1, 2, 3].map((index) => (
-                <button key={index} onClick={generateTopic}>
-                  出題{index}
-                </button>
-              ))}
+              <button onClick={() => generateTopic('normal')}>普通</button>
+              <button onClick={() => generateTopic('hard')}>辛口</button>
+              <button onClick={() => generateTopic('expert')}>激辛</button>
             </div>
             <div style={{ marginTop: 12, fontSize: 14 }}>
               {hasTopic ? (
