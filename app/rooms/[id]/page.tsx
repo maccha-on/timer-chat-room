@@ -551,7 +551,7 @@ export default function RoomPage() {
       >
         <div
           style={{
-            flex: '0 0 320px',
+            flex: '0 0 460px',
             maxWidth: '100%',
             display: 'flex',
             flexDirection: 'column',
@@ -568,9 +568,9 @@ export default function RoomPage() {
                   <li
                     key={member.id}
                     style={{
-                      border: '1px solid #e5e7eb',
+                      // border: '1px solid #e5e7eb',
                       borderRadius: 8,
-                      padding: '8px 12px',
+                      padding: '4px 8px',
                       background: '#fff',
                       display: 'flex',
                       alignItems: 'center',
@@ -682,24 +682,24 @@ export default function RoomPage() {
 
       <div
         style={{
-          marginTop: 24,
+          marginTop: 18,
           border: '1px solid #e5e7eb',
           borderRadius: 8,
           background: '#ffffff',
-          padding: 16,
-          maxWidth: 640,
+          padding: 12,
+          maxWidth: 960,
         }}
       >
-        <h3 style={{ marginTop: 0, marginBottom: 8 }}>インサイダーゲーム ルール</h3>
-        <p style={{ margin: '2px 0' }}>1. マスターはお題を確認し、他のプレイヤーの質問にYes/Noで答えます。</p>
-        <p style={{ margin: '2px 0' }}>2. 全員でお題を推理します。インサイダーは正体を隠しつつ、正解が出るように誘導します。</p>
-        <p style={{ margin: '2px 0' }}>3. 庶民は協力してお題を推理し、制限時間内に答えを導きます。</p>
-        <p style={{ margin: '2px 0' }}>4. 正解が出たら、インサイダーが誰かを話し合って投票します。（多数決。同数の場合はマスターが決定）</p>
-        <p style={{ margin: '2px 0' }}>（時間の目安 お題当て 5～12分、インサイダー当て 3～5分）</p>
-        <p style={{ margin: '4px 0' }}>得点:</p>
-        <p style={{ margin: '2px 0' }}> お題当てに失敗: 全員 -1点</p>
-        <p style={{ margin: '2px 0' }}> インサイダー推理に成功: インサイダー以外 +1点</p>
-        <p style={{ margin: '2px 0' }}> インサイダー推理に失敗: インサイダー +2点、お題を当てた人 +1点（庶民のみ）</p>
+        <h3 style={{ marginTop: 0, marginBottom: 8 }}>インサイダーゲームで遊ぶ場合: ルール</h3>
+        <p style={{ margin: '2px 0px' }}>　1. マスターはお題を確認し、他のプレイヤーの質問にYes/Noで答えます。</p>
+        <p style={{ margin: '2px 0px' }}>　2. 全員でお題を推理します。インサイダーは正体を隠しつつ、正解が出るように誘導します。</p>
+        <p style={{ margin: '2px 0px' }}>　3. 庶民は協力してお題を推理し、制限時間内に答えを導きます。</p>
+        <p style={{ margin: '2px 0px' }}>　4. 正解が出たら、インサイダーが誰かを話し合って投票します。</p>
+        <p style={{ margin: '2px 0px' }}>　（時間の目安 お題当て 5～12分、インサイダー当て 3～5分）</p>
+        <p style={{ margin: '4px 0px' }}>得点:</p>
+        <p style={{ margin: '2px 0px' }}>　お題当てに失敗: 全員 -1点</p>
+        <p style={{ margin: '2px 0px' }}>　インサイダー推理に成功: インサイダー以外 +1点、お題を当てた庶民 +1点(インサイダー除く)</p>
+        <p style={{ margin: '2px 0px' }}>　インサイダー推理に失敗: インサイダー +1点、お題を当てた人 +1点</p>
       </div>
 
       <audio ref={gongRef} src="/gong.mp3" preload="auto" />
