@@ -20,15 +20,39 @@ type MemberRow = {
   joined_at?: string | null;
 };
 
-export async function GET(req: Request) {
+type JoinBody = {
+  roomId?: string;
+  username?: string | null;
+};
+
+const missingTokenResponse = NextResponse.json({ message: 'missing access token' }, { status: 401 });
+
+async function resolveUserFromRequest(req: Request) {
   const authorization = req.headers.get('authorization');
   if (!authorization?.startsWith('Bearer ')) {
-    return NextResponse.json({ message: 'missing access token' }, { status: 401 });
+    return { errorResponse: missingTokenResponse, userId: null } as const;
   }
 
   const token = authorization.slice('Bearer '.length).trim();
   if (!token) {
-    return NextResponse.json({ message: 'missing access token' }, { status: 401 });
+    return { errorResponse: missingTokenResponse, userId: null } as const;
+  }
+
+  const { data: userData, error: userError } = await serviceClient.auth.getUser(token);
+  if (userError || !userData.user) {
+    return {
+      errorResponse: NextResponse.json({ message: userError?.message ?? 'invalid session' }, { status: 401 }),
+      userId: null,
+    } as const;
+  }
+
+  return { errorResponse: null, userId: userData.user.id } as const;
+}
+
+export async function GET(req: Request) {
+  const { errorResponse, userId } = await resolveUserFromRequest(req);
+  if (errorResponse) {
+    return errorResponse;
   }
 
   const url = new URL(req.url);
@@ -36,13 +60,6 @@ export async function GET(req: Request) {
   if (!roomId) {
     return NextResponse.json({ message: 'roomId is required' }, { status: 400 });
   }
-
-  const { data: userData, error: userError } = await serviceClient.auth.getUser(token);
-  if (userError || !userData.user) {
-    return NextResponse.json({ message: userError?.message ?? 'invalid session' }, { status: 401 });
-  }
-
-  const userId = userData.user.id;
 
   const { data: membership, error: membershipError } = await serviceClient
     .from('room_members')
@@ -76,4 +93,43 @@ export async function GET(req: Request) {
       joined_at: row.joined_at,
     })),
   });
+}
+
+export async function POST(req: Request) {
+  const { errorResponse, userId } = await resolveUserFromRequest(req);
+  if (errorResponse || !userId) {
+    return errorResponse ?? missingTokenResponse;
+  }
+
+  let body: JoinBody;
+  try {
+    body = (await req.json()) as JoinBody;
+  } catch {
+    return NextResponse.json({ message: 'invalid request body' }, { status: 400 });
+  }
+
+  const roomId = body.roomId?.trim();
+  if (!roomId) {
+    return NextResponse.json({ message: 'roomId is required' }, { status: 400 });
+  }
+
+  const displayName = (body.username ?? '').trim() || '(anonymous)';
+
+  const { error: memberError } = await serviceClient
+    .from('room_members')
+    .upsert({ room_id: roomId, user_id: userId, username: displayName }, { onConflict: 'room_id,user_id' });
+
+  if (memberError) {
+    return NextResponse.json({ message: memberError.message }, { status: 500 });
+  }
+
+  const { error: scoreError } = await serviceClient
+    .from('room_scores')
+    .upsert({ room_id: roomId, user_id: userId, score: 0 }, { onConflict: 'room_id,user_id' });
+
+  if (scoreError) {
+    return NextResponse.json({ message: scoreError.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true });
 }

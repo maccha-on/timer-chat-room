@@ -87,22 +87,31 @@ export default function RoomPage() {
         setUsername(displayName);
       }
 
-      const { error: memberError } = await supabase
-        .from('room_members')
-        .upsert({ room_id: roomId, user_id: uid, username: displayName }, { onConflict: 'room_id,user_id' });
-
-      if (memberError) {
-        alert(`room_members upsert failed: ${memberError.message}`);
-        router.replace('/');
+      const token = data.session.access_token;
+      if (!token) {
+        alert('有効なセッションが見つかりませんでした。もう一度ログインしてください。');
+        router.replace('/login');
         return;
       }
 
-      const { error: scoreError } = await supabase
-        .from('room_scores')
-        .upsert({ room_id: roomId, user_id: uid, score: 0 }, { onConflict: 'room_id,user_id' });
+      const response = await fetch('/api/room-members', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ roomId, username: displayName }),
+      });
 
-      if (scoreError) {
-        alert(`room_scores upsert failed: ${scoreError.message}`);
+      if (!response.ok) {
+        let message = response.statusText;
+        try {
+          const payload = (await response.json()) as { message?: string; error?: string };
+          message = payload.message ?? payload.error ?? message;
+        } catch {
+          // ignore JSON parse errors
+        }
+        alert(`ルームへの参加に失敗しました: ${message}`);
         router.replace('/');
         return;
       }

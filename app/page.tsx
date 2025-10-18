@@ -129,32 +129,6 @@ export default function Home() {
       return;
     }
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('username')
-      .eq('id', userId)
-      .maybeSingle();
-
-    const displayName = profile?.username?.trim() || '(anonymous)';
-
-    const { error: memberError } = await supabase
-      .from('room_members')
-      .insert({ room_id: inserted.id, user_id: userId, username: displayName });
-
-    if (memberError) {
-      alert(`room_members insert failed: ${memberError.message}`);
-      return;
-    }
-
-    const { error: scoreError } = await supabase
-      .from('room_scores')
-      .insert({ room_id: inserted.id, user_id: userId, score: 0 });
-
-    if (scoreError) {
-      alert(`room_scores insert failed: ${scoreError.message}`);
-      return;
-    }
-
     setRoomName('');
     router.push(`/rooms/${inserted.id}`);
   };
