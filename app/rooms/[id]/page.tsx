@@ -453,14 +453,14 @@ export default function RoomPage() {
     }
   };
 
-  const generateTopic = async () => {
+  const generateTopic = async (difficulty: 'normal' | 'hard' | 'expert') => {
     if (!userId) return;
 
     try {
       const response = await fetch('/api/generate-topic', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roomId, requesterId: userId }),
+        body: JSON.stringify({ roomId, requesterId: userId, difficulty }),
       });
 
       const payload = (await response.json()) as {
@@ -619,11 +619,9 @@ export default function RoomPage() {
               <div style={{ fontSize: 14, color: '#1f2937' }}>役割: {myRoleLabel}</div>
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {[1, 2, 3].map((index) => (
-                <button key={index} onClick={generateTopic}>
-                  出題{index}
-                </button>
-              ))}
+              <button onClick={() => generateTopic('normal')}>普通</button>
+              <button onClick={() => generateTopic('hard')}>辛口</button>
+              <button onClick={() => generateTopic('expert')}>激辛</button>
             </div>
             <div style={{ marginTop: 12, fontSize: 14 }}>
               {hasTopic ? (
@@ -658,10 +656,7 @@ export default function RoomPage() {
                 const author = message.user_id ? usernameMap.get(message.user_id) ?? 'anonymous' : 'anonymous';
                 return (
                   <div key={message.id} style={{ marginBottom: 6 }}>
-                    <span style={{ color: '#6b7280' }}>
-                      {new Date(message.created_at).toLocaleTimeString()} {author}：
-                    </span>{' '}
-                    {message.body}
+                    <span style={{ color: '#6b7280' }}>{author}：</span> {message.body}
                   </div>
                 );
               })
@@ -683,6 +678,23 @@ export default function RoomPage() {
             <button onClick={sendMessage}>送信</button>
           </div>
         </section>
+      </div>
+
+      <div
+        style={{
+          marginTop: 24,
+          border: '1px solid #e5e7eb',
+          borderRadius: 8,
+          background: '#ffffff',
+          padding: 16,
+          maxWidth: 640,
+        }}
+      >
+        <h3 style={{ marginTop: 0, marginBottom: 12 }}>ゲームルール（仮）</h3>
+        <p style={{ margin: '4px 0' }}>1. マスターはお題を確認し、他のプレイヤーにヒントを出します。</p>
+        <p style={{ margin: '4px 0' }}>2. インサイダーは正体を隠しつつ、お題を当てるように誘導します。</p>
+        <p style={{ margin: '4px 0' }}>3. 庶民は協力してお題を推理し、制限時間内に答えを導きます。</p>
+        <p style={{ margin: '4px 0' }}>4. ラウンド終了後に誰がインサイダーかを話し合って投票します。</p>
       </div>
 
       <audio ref={gongRef} src="/gong.mp3" preload="auto" />

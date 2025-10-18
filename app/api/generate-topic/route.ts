@@ -4,29 +4,38 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 import { NextRequest, NextResponse } from 'next/server';
-import OpenAI from 'openai';
 import { createClient } from '@supabase/supabase-js';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 
-type Body = { roomId: string; requesterId: string };
+type Body = { roomId: string; requesterId: string; difficulty?: Difficulty };
 type RoomMemberRow = { user_id: string };
 type RoundRow = { id: number };
 
-const fallbackTopics = ['りんご', 'コーヒー', '自転車', '本', '時計', '橋', '山', '海', '椅子', '電話'];
+type Difficulty = 'normal' | 'hard' | 'expert';
+
+const topicFileMap: Record<Difficulty, string> = {
+  normal: 'normal.json',
+  hard: 'hard.json',
+  expert: 'expert.json',
+};
 
 const supaAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!, // server-only
 );
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
-
 export async function POST(req: NextRequest) {
   try {
-    const { roomId, requesterId } = (await req.json()) as Body;
+    const { roomId, requesterId, difficulty: requestedDifficulty } = (await req.json()) as Body;
 
     if (!roomId || !requesterId) {
       return NextResponse.json({ error: 'roomId/requesterId required' }, { status: 400 });
     }
+
+    const difficulty: Difficulty = (requestedDifficulty && requestedDifficulty in topicFileMap
+      ? requestedDifficulty
+      : 'normal') as Difficulty;
 
     // 1) ルームメンバー取得
     const { data: members, error: memErr } = await supaAdmin
@@ -46,32 +55,22 @@ export async function POST(req: NextRequest) {
     }
 
     // 2) お題生成
-    const prompt =
-      '日本語で、大人ならほとんどの人が知っている一般名詞を1語だけ出してください。' +
-      '固有名詞や専門用語は避け、出力は単語のみ（記号・説明なし）。';
+    const topicFile = topicFileMap[difficulty];
+    const filePath = path.join(process.cwd(), 'public', topicFile);
+    const raw = await readFile(filePath, 'utf-8').catch(() => null);
 
-    const completion = await openai.chat.completions
-      .create({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: 'You are a helpful topic generator.' },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0.7,
-        max_tokens: 10,
-      })
-      .catch((err: unknown) => {
-        const message =
-          typeof err === 'object' && err !== null && 'message' in err
-            ? String((err as { message: unknown }).message)
-            : 'OpenAI API request failed';
-        throw new Error(message);
-      });
-
-    const topic = completion.choices[0]?.message?.content?.trim()?.replace(/[^\p{L}\p{N}\u3000\u3040-\u30FF\u4E00-\u9FFF]/gu, '') ?? '';
-    if (!topic) {
-      throw new Error('OpenAIから有効なお題を取得できませんでした。');
+    if (!raw) {
+      throw new Error('お題リストの読み込みに失敗しました。');
     }
+
+    const topics = JSON.parse(raw) as unknown;
+    const topicList = Array.isArray(topics) ? topics.filter((item): item is string => typeof item === 'string') : [];
+
+    if (topicList.length === 0) {
+      throw new Error('お題リストが空です。');
+    }
+
+    const topic = topicList[Math.floor(Math.random() * topicList.length)];
 
     // 3) 役割抽選
     const shuffled = [...ids].sort(() => Math.random() - 0.5);
