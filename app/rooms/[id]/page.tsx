@@ -513,14 +513,6 @@ export default function RoomPage() {
   const myRoleLabel = myRole ? roleLabels[myRole] : '役割未設定';
   const canSeeTopic = myRole === 'presenter' || myRole === 'insider';
 
-  const roleLabels: Record<Role, string> = {
-    presenter: 'マスター',
-    insider: 'インサイダー',
-    common: '庶民',
-  };
-  const myRoleLabel = myRole ? roleLabels[myRole] : '役割未設定';
-  const canSeeTopic = myRole === 'presenter' || myRole === 'insider';
-
   return (
     <div style={{ maxWidth: 980, margin: '20px auto', padding: '0 16px' }}>
       <header

@@ -15,6 +15,7 @@ drop table if exists room_members cascade;
 drop table if exists rooms cascade;
 drop table if exists profiles cascade;
 drop function if exists set_updated_at() cascade;
+drop function if exists ensure_owner_membership() cascade;
 drop function if exists is_round_member(bigint, uuid) cascade;
 drop function if exists is_round_member(bigint) cascade;
 drop function if exists is_room_member(uuid, uuid) cascade;
@@ -48,7 +49,7 @@ create index rooms_owner_idx on rooms (owner);
 create table room_members (
   room_id uuid not null references rooms (id) on delete cascade,
   user_id uuid not null references auth.users (id) on delete cascade,
-  username text not null,
+  username text not null check (char_length(trim(username)) > 0),
   joined_at timestamptz not null default now(),
   primary key (room_id, user_id)
 );
@@ -83,6 +84,8 @@ create table timers (
   updated_at timestamptz not null default now()
 );
 
+create index timers_updated_at_idx on timers (updated_at);
+
 create or replace function set_updated_at()
 returns trigger
 language plpgsql
@@ -96,6 +99,39 @@ $$;
 create trigger timers_set_updated_at
 before update on timers
 for each row execute procedure set_updated_at();
+
+create or replace function ensure_owner_membership()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  owner_name text;
+begin
+  select username into owner_name from profiles where id = new.owner;
+  owner_name := coalesce(nullif(trim(owner_name), ''), '(anonymous)');
+
+  insert into room_members (room_id, user_id, username)
+  values (new.id, new.owner, owner_name)
+  on conflict (room_id, user_id) do update set username = excluded.username;
+
+  insert into room_scores (room_id, user_id, score)
+  values (new.id, new.owner, 0)
+  on conflict (room_id, user_id) do nothing;
+
+  insert into timers (room_id, deadline_at, duration_seconds)
+  values (new.id, null, 0)
+  on conflict (room_id) do nothing;
+
+  return new;
+end;
+$$;
+
+create trigger rooms_owner_membership
+after insert on rooms
+for each row
+execute procedure ensure_owner_membership();
 
 -- Rounds and roles ----------------------------------------------------------
 create table rounds (
@@ -280,5 +316,12 @@ alter publication supabase_realtime add table messages;
 alter publication supabase_realtime add table timers;
 alter publication supabase_realtime add table rounds;
 alter publication supabase_realtime add table round_roles;
+
+-- Ensure standard privileges remain after recreation --------------------------------
+grant usage on schema public to postgres, anon, authenticated, service_role;
+grant all on all tables in schema public to postgres, service_role;
+grant select on all tables in schema public to anon;
+grant select, insert, update, delete on all tables in schema public to authenticated;
+grant usage, select on all sequences in schema public to anon, authenticated;
 
 commit;
