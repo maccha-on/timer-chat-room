@@ -571,7 +571,7 @@ export default function RoomPage() {
                       // border: '1px solid #e5e7eb',
                       // borderRadius: 8,
                       padding: '2px 12px',
-                      background: '#fdfdee',
+                      background: '#fdfdf8',
                       display: 'flex',
                       alignItems: 'center',
                       gap: 12,
@@ -580,8 +580,22 @@ export default function RoomPage() {
                   >
                     <div style={{ fontWeight: 600 }}>{member.username}</div>
                     <div>得点: {scores[member.id] ?? 0}</div>
+                    {/* 修正前のコード
                     <button onClick={() => updateScore(member.id, +1)}>＋</button>
                     <button onClick={() => updateScore(member.id, -1)}>－</button>
+                    */}
+                    <button
+                      style={{ fontSize: '0.8rem', padding: '2px 6px' }}
+                      onClick={() => updateScore(member.id, +1)}
+                    >
+                      ＋
+                    </button>
+                    <button
+                      style={{ fontSize: '0.8rem', padding: '2px 6px' }}
+                      onClick={() => updateScore(member.id, -1)}
+                    >
+                      －
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -690,7 +704,7 @@ export default function RoomPage() {
           maxWidth: 960,
         }}
       >
-        <h3 style={{ marginTop: 0, marginBottom: 4 , fontSize: '0.９rem' }}>インサイダーゲーム用 ルール例</h3>
+        <p style={{ margin: '1px 0px', fontSize: '0.8rem', fontWeight: 'bold' }}>インサイダーゲーム用 ルール例</p>
         <p style={{ margin: '1px 0px', fontSize: '0.8rem' }}>　1. マスターはお題を確認し、他のプレイヤーの質問にYes/Noで答えます。</p>
         <p style={{ margin: '1px 0px', fontSize: '0.8rem' }}>　2. 全員でお題を推理します。インサイダーは正体を隠しつつ、正解が出るように誘導します。</p>
         <p style={{ margin: '1px 0px', fontSize: '0.8rem' }}>　3. 庶民は協力してお題を推理し、制限時間内に答えを導きます。</p>
