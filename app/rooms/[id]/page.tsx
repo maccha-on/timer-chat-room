@@ -87,22 +87,31 @@ export default function RoomPage() {
         setUsername(displayName);
       }
 
-      const { error: memberError } = await supabase
-        .from('room_members')
-        .upsert({ room_id: roomId, user_id: uid, username: displayName }, { onConflict: 'room_id,user_id' });
-
-      if (memberError) {
-        alert(`room_members upsert failed: ${memberError.message}`);
-        router.replace('/');
+      const token = data.session.access_token;
+      if (!token) {
+        alert('有効なセッションが見つかりませんでした。もう一度ログインしてください。');
+        router.replace('/login');
         return;
       }
 
-      const { error: scoreError } = await supabase
-        .from('room_scores')
-        .upsert({ room_id: roomId, user_id: uid, score: 0 }, { onConflict: 'room_id,user_id' });
+      const response = await fetch('/api/room-members', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ roomId, username: displayName }),
+      });
 
-      if (scoreError) {
-        alert(`room_scores upsert failed: ${scoreError.message}`);
+      if (!response.ok) {
+        let message = response.statusText;
+        try {
+          const payload = (await response.json()) as { message?: string; error?: string };
+          message = payload.message ?? payload.error ?? message;
+        } catch {
+          // ignore JSON parse errors
+        }
+        alert(`ルームへの参加に失敗しました: ${message}`);
         router.replace('/');
         return;
       }
@@ -514,137 +523,167 @@ export default function RoomPage() {
   const canSeeTopic = myRole === 'presenter' || myRole === 'insider';
 
   return (
-    <div style={{ maxWidth: 980, margin: '20px auto', padding: '0 16px' }}>
+    <div style={{ maxWidth: 1080, margin: '0 auto', padding: 24 }}>
       <header
         style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          gap: 16,
           marginBottom: 24,
           flexWrap: 'wrap',
+          gap: 16,
         }}
       >
         <Image src="/top.png" alt="Top" width={320} height={80} style={{ height: 'auto' }} />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <div>
-            <div style={{ fontWeight: 600 }}>ユーザー名: {username}</div>
-            <div style={{ fontSize: 14, color: '#1f2937', marginTop: 4 }}>役割: {myRoleLabel}</div>
-          </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+          <div style={{ fontWeight: 600 }}>ユーザー名: {username}</div>
           <button onClick={leaveRoom}>退出</button>
         </div>
       </header>
 
-      <section style={{ marginBottom: 24 }}>
-        <h3 style={{ marginBottom: 12 }}>入室中のユーザー</h3>
-        {members.length === 0 ? (
-          <p style={{ color: '#6b7280' }}>表示できるメンバーがいません。</p>
-        ) : (
-          <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 8 }}>
-            {members.map((member) => (
-              <li
-                key={member.id}
-                style={{
-                  border: '1px solid #e5e7eb',
-                  borderRadius: 8,
-                  padding: '8px 12px',
-                  background: '#fff',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 12,
-                  flexWrap: 'wrap',
-                }}
-              >
-                <div style={{ fontWeight: 600 }}>{member.username}</div>
-                <div>得点: {scores[member.id] ?? 0}</div>
-                <button onClick={() => updateScore(member.id, +1)}>＋</button>
-                <button onClick={() => updateScore(member.id, -1)}>－</button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section style={{ marginBottom: 24 }}>
-        <h3 style={{ marginBottom: 12 }}>タイマー</h3>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <label>
-            <input value={minInput} onChange={(e) => setMinInput(e.target.value)} style={{ width: 60 }} /> 分
-          </label>
-          <label>
-            <input value={secInput} onChange={(e) => setSecInput(e.target.value)} style={{ width: 60 }} /> 秒
-          </label>
-          <button onClick={startTimer}>スタート</button>
-          {isRunning ? (
-            <button onClick={pauseTimer}>一時停止</button>
-          ) : null}
-          {isPaused ? (
-            <button onClick={resumeTimer}>再開</button>
-          ) : null}
-        </div>
-        <div style={{ fontSize: 36, fontWeight: 'bold', marginTop: 12 }}>{formatTime(remainingMs)}</div>
-      </section>
-
-      <section style={{ marginBottom: 24 }}>
-        <h3 style={{ marginBottom: 12 }}>お題生成</h3>
-        <button onClick={generateTopic}>出題</button>
-        <div style={{ marginTop: 12, fontSize: 14 }}>
-          {hasTopic ? (
-            canSeeTopic ? (
-              <div>お題: {currentTopic ?? ''}</div>
-            ) : (
-              <div style={{ color: '#6b7280' }}>お題はあなたには表示されません</div>
-            )
-          ) : (
-            <div style={{ color: '#6b7280' }}>お題はまだ生成されていません</div>
-          )}
-        </div>
-      </section>
-
-      <section style={{ marginBottom: 24 }}>
-        <h3 style={{ marginBottom: 12 }}>チャット</h3>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 24,
+          flexWrap: 'wrap',
+        }}
+      >
         <div
           style={{
-            border: '1px solid #e5e7eb',
-            borderRadius: 8,
-            height: 220,
-            overflowY: 'auto',
-            padding: 12,
-            background: '#f9fafb',
+            flex: '0 0 320px',
+            maxWidth: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 24,
           }}
         >
-          {messages.length === 0 ? (
-            <p style={{ color: '#6b7280' }}>まだメッセージはありません。</p>
-          ) : (
-            messages.map((message) => {
-              const author = message.user_id ? usernameMap.get(message.user_id) ?? 'anonymous' : 'anonymous';
-              return (
-                <div key={message.id} style={{ marginBottom: 6 }}>
-                  <span style={{ color: '#6b7280' }}>
-                    {new Date(message.created_at).toLocaleTimeString()} {author}：
-                  </span>{' '}
-                  {message.body}
-                </div>
-              );
-            })
-          )}
+          <section>
+            <h3 style={{ marginBottom: 12 }}>入室中のユーザー</h3>
+            {members.length === 0 ? (
+              <p style={{ color: '#6b7280' }}>表示できるメンバーがいません。</p>
+            ) : (
+              <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 8 }}>
+                {members.map((member) => (
+                  <li
+                    key={member.id}
+                    style={{
+                      border: '1px solid #e5e7eb',
+                      borderRadius: 8,
+                      padding: '8px 12px',
+                      background: '#fff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <div style={{ fontWeight: 600 }}>{member.username}</div>
+                    <div>得点: {scores[member.id] ?? 0}</div>
+                    <button onClick={() => updateScore(member.id, +1)}>＋</button>
+                    <button onClick={() => updateScore(member.id, -1)}>－</button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section>
+            <h3 style={{ marginBottom: 12 }}>タイマー</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <label>
+                <input value={minInput} onChange={(e) => setMinInput(e.target.value)} style={{ width: 60 }} /> 分
+              </label>
+              <label>
+                <input value={secInput} onChange={(e) => setSecInput(e.target.value)} style={{ width: 60 }} /> 秒
+              </label>
+              <button onClick={startTimer}>スタート</button>
+              {isRunning ? <button onClick={pauseTimer}>一時停止</button> : null}
+              {isPaused ? <button onClick={resumeTimer}>再開</button> : null}
+            </div>
+            <div style={{ fontSize: 36, fontWeight: 'bold', marginTop: 12 }}>{formatTime(remainingMs)}</div>
+          </section>
+
+          <section>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12,
+                marginBottom: 12,
+                flexWrap: 'wrap',
+              }}
+            >
+              <h3 style={{ margin: 0 }}>お題生成</h3>
+              <div style={{ fontSize: 14, color: '#1f2937' }}>役割: {myRoleLabel}</div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {[1, 2, 3].map((index) => (
+                <button key={index} onClick={generateTopic}>
+                  出題{index}
+                </button>
+              ))}
+            </div>
+            <div style={{ marginTop: 12, fontSize: 14 }}>
+              {hasTopic ? (
+                canSeeTopic ? (
+                  <div>お題: {currentTopic ?? ''}</div>
+                ) : (
+                  <div style={{ color: '#6b7280' }}>お題はあなたには表示されません</div>
+                )
+              ) : (
+                <div style={{ color: '#6b7280' }}>お題はまだ生成されていません</div>
+              )}
+            </div>
+          </section>
         </div>
-        <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-          <input
-            value={chatInput}
-            onChange={(e) => setChatInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                void sendMessage();
-              }
+
+        <section style={{ flex: 1, minWidth: 280 }}>
+          <h3 style={{ marginBottom: 12 }}>チャット</h3>
+          <div
+            style={{
+              border: '1px solid #e5e7eb',
+              borderRadius: 8,
+              height: 360,
+              overflowY: 'auto',
+              padding: 12,
+              background: '#f9fafb',
             }}
-            placeholder="メッセージを入力..."
-            style={{ flex: 1 }}
-          />
-          <button onClick={sendMessage}>送信</button>
-        </div>
-      </section>
+          >
+            {messages.length === 0 ? (
+              <p style={{ color: '#6b7280' }}>まだメッセージはありません。</p>
+            ) : (
+              messages.map((message) => {
+                const author = message.user_id ? usernameMap.get(message.user_id) ?? 'anonymous' : 'anonymous';
+                return (
+                  <div key={message.id} style={{ marginBottom: 6 }}>
+                    <span style={{ color: '#6b7280' }}>
+                      {new Date(message.created_at).toLocaleTimeString()} {author}：
+                    </span>{' '}
+                    {message.body}
+                  </div>
+                );
+              })
+            )}
+          </div>
+          <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+            <input
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void sendMessage();
+                }
+              }}
+              placeholder="メッセージを入力..."
+              style={{ flex: 1 }}
+            />
+            <button onClick={sendMessage}>送信</button>
+          </div>
+        </section>
+      </div>
 
       <audio ref={gongRef} src="/gong.mp3" preload="auto" />
     </div>
