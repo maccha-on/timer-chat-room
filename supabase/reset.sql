@@ -236,11 +236,20 @@ create policy "Members can view fellow members"
   using (is_room_member(room_members.room_id));
 create policy "Users manage their own membership"
   on room_members for insert
-  with check (auth.uid() = user_id);
+  with check (
+    auth.uid() = user_id
+    or auth.role() = 'service_role'
+  );
 create policy "Users update their own membership"
   on room_members for update
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  using (
+    auth.uid() = user_id
+    or auth.role() = 'service_role'
+  )
+  with check (
+    auth.uid() = user_id
+    or auth.role() = 'service_role'
+  );
 create policy "Users can leave rooms"
   on room_members for delete
   using (auth.uid() = user_id);
