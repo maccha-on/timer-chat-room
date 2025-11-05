@@ -42,6 +42,7 @@ export default function RoomPage() {
   const [myRole, setMyRole] = useState<Role | null>(null);
   const [currentTopic, setCurrentTopic] = useState<string | null>(null);
   const [hasTopic, setHasTopic] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
 
   const gongRef = useRef<HTMLAudioElement | null>(null);
   const gongPlayedRef = useRef(false);
@@ -391,6 +392,44 @@ export default function RoomPage() {
     }
   };
 
+  // Start timer helper that accepts total seconds (avoids race with setState)
+  const startTimerWithTotal = async (totalSeconds: number) => {
+    const total = Math.max(0, Math.floor(totalSeconds));
+
+    if (total <= 0) {
+      const { error } = await supabase
+        .from('timers')
+        .upsert({ room_id: roomId, deadline_at: null, duration_seconds: 0 }, { onConflict: 'room_id' });
+      if (error) alert(`タイマー更新に失敗しました: ${error.message}`);
+      return;
+    }
+
+    const deadline = new Date(Date.now() + total * 1000).toISOString();
+    const { error } = await supabase
+      .from('timers')
+      .upsert({ room_id: roomId, deadline_at: deadline, duration_seconds: total }, { onConflict: 'room_id' });
+
+    if (error) {
+      alert(`タイマー更新に失敗しました: ${error.message}`);
+    } else {
+      gongPlayedRef.current = false;
+    }
+  };
+
+  // Quick action: set inputs to 3:00 and start immediately
+  const startThreeMinutes = async () => {
+    setMinInput('3');
+    setSecInput('0');
+    await startTimerWithTotal(3 * 60);
+  };
+  const startSevenMinutes = async () => {
+    setMinInput('7');
+    setSecInput('0');
+    await startTimerWithTotal(3 * 60);
+  };
+
+
+
   const pauseTimer = async () => {
     if (!timerRow) return;
 
@@ -515,6 +554,55 @@ export default function RoomPage() {
     }
   };
 
+  // Clear past room data: messages, rounds, round_roles, timers, room_scores
+  const clearRoomData = async () => {
+    if (!confirm('本当にこの部屋の過去データ（ラウンド・スコア・タイマー）を削除しますか？この操作は取り消せません。')) {
+      return;
+    }
+
+    setIsClearing(true);
+
+    try {
+      // 1) delete messages
+      const { error: msgErr } = await supabase.from('messages').delete().eq('room_id', roomId);
+      if (msgErr) throw msgErr;
+
+      // 2) find rounds for this room
+      const { data: rounds, error: roundsErr } = await supabase.from('rounds').select('id').eq('room_id', roomId);
+      if (roundsErr) throw roundsErr;
+
+      const roundIds = (rounds ?? []).map((r: any) => r.id).filter((v: any) => typeof v === 'number');
+
+      // 3) delete round_roles for those rounds
+      if (roundIds.length > 0) {
+        const { error: rrErr } = await supabase.from('round_roles').delete().in('round_id', roundIds);
+        if (rrErr) throw rrErr;
+
+        const { error: delRoundsErr } = await supabase.from('rounds').delete().in('id', roundIds);
+        if (delRoundsErr) throw delRoundsErr;
+      }
+
+      // 4) delete timers
+      const { error: timersErr } = await supabase.from('timers').delete().eq('room_id', roomId);
+      if (timersErr) throw timersErr;
+
+      // 5) delete scores
+      const { error: scoresErr } = await supabase.from('room_scores').delete().eq('room_id', roomId);
+      if (scoresErr) throw scoresErr;
+
+      // Refresh local state
+      await Promise.all([loadMessages(), loadRound(), loadScores(), loadTimer()]);
+
+      alert('部屋のデータを削除しました。');
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      alert(`削除に失敗しました: ${message}`);
+      console.error('clearRoomData error', e);
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
   if (initializing) {
     return <p style={{ padding: '40px 0', textAlign: 'center' }}>Loading...</p>;
   }
@@ -537,6 +625,9 @@ export default function RoomPage() {
         <Image src="/top.png" alt="Top" width={160} height={40} style={{ height: 'auto' }} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
           <div style={{ fontWeight: 600 }}>ユーザー名: {username}</div>
+          <button onClick={clearRoomData} disabled={isClearing} style={{ background: isClearing ? '#f3c6c6' : '#ffdede' }}>
+            {isClearing ? '削除中...' : 'データ削除'}
+          </button>
           <button onClick={leaveRoom}>退出</button>
         </div>
       </header>
@@ -612,6 +703,8 @@ export default function RoomPage() {
                 <input value={secInput} onChange={(e) => setSecInput(e.target.value)} style={{ width: 60 }} /> 秒
               </label>
               <button onClick={startTimer}>スタート</button>
+              <button onClick={startThreeMinutes}>3分</button>
+              <button onClick={startSevenMinutes}>7分</button>
               {isRunning ? <button onClick={pauseTimer}>一時停止</button> : null}
               {isPaused ? <button onClick={resumeTimer}>再開</button> : null}
             </div>
@@ -709,11 +802,11 @@ export default function RoomPage() {
         <p style={{ margin: '1px 0px', fontSize: '0.8rem' }}>　2. 全員でお題を推理します。インサイダーは正体を隠しつつ、正解が出るように誘導します。</p>
         <p style={{ margin: '1px 0px', fontSize: '0.8rem' }}>　3. 庶民は協力してお題を推理し、制限時間内に答えを導きます。</p>
         <p style={{ margin: '1px 0px', fontSize: '0.8rem' }}>　4. 正解が出たら、インサイダーが誰かを話し合って投票します。</p>
-        <p style={{ margin: '1px 0px', fontSize: '0.8rem' }}>　（時間の目安 お題当て 5～12分、インサイダー当て 3～5分）</p>
+        <p style={{ margin: '1px 0px', fontSize: '0.8rem' }}>　（時間の目安 お題当て 5～10分、インサイダーの推理 3分）</p>
         <p style={{ margin: '4px 4px', fontSize: '0.8rem' }}>得点:</p>
-        <p style={{ margin: '1px 0px', fontSize: '0.8rem' }}>　お題当てに失敗: 全員 -1点</p>
-        <p style={{ margin: '1px 0px', fontSize: '0.8rem' }}>　インサイダー推理に成功: インサイダー以外 +1点、お題を当てた人 +1点（庶民のみ）</p>
-        <p style={{ margin: '1px 0px', fontSize: '0.8rem' }}>　インサイダー推理に失敗: インサイダー +1点、お題を当てた人 +1点</p>
+{/*        <p style={{ margin: '1px 0px', fontSize: '0.8rem' }}>　お題当てに失敗: 全プレイヤー -1点</p>*/}
+        <p style={{ margin: '1px 0px', fontSize: '0.8rem' }}>　インサイダーの推理成功: インサイダーを除く全員 +1点</p>
+        <p style={{ margin: '1px 0px', fontSize: '0.8rem' }}>　インサイダーの推理失敗: インサイダー +1点、（お題正解者かつインサイダーと間違われた庶民も +1点）</p>
       </div>
 
       <audio ref={gongRef} src="/gong.mp3" preload="auto" />
