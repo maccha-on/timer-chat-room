@@ -568,10 +568,28 @@ export default function RoomPage() {
       if (msgErr) throw msgErr;
 
       // 2) find rounds for this room
-      const { data: rounds, error: roundsErr } = await supabase.from('rounds').select('id').eq('room_id', roomId);
+      // 修正前コード
+      //const { data: rounds, error: roundsErr } = await supabase.from('rounds').select('id').eq('room_id', roomId);
+      //if (roundsErr) throw roundsErr;
+      //
+      //const roundIds = (rounds ?? []).map((r: any) => r.id).filter((v: any) => typeof v === 'number');
+
+      // 2) find rounds for this room
+      const { data: rounds, error: roundsErr } = await supabase
+        .from('rounds')
+        .select('id')
+        .eq('room_id', roomId);
+
       if (roundsErr) throw roundsErr;
 
-      const roundIds = (rounds ?? []).map((r: any) => r.id).filter((v: any) => typeof v === 'number');
+      // rounds が null の場合も想定して、型を明示
+      type RoundRecord = { id: number | string | null }; // DBの型に合わせて修正可
+
+      const roundIds = (rounds ?? [])
+        .map((r: RoundRecord) => r.id)
+        .filter((v): v is number => typeof v === 'number');
+
+
 
       // 3) delete round_roles for those rounds
       if (roundIds.length > 0) {
