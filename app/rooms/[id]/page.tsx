@@ -823,8 +823,8 @@ export default function RoomPage() {
         <p style={{ margin: '1px 0px', fontSize: '0.8rem' }}>　（時間の目安 お題当て 5～10分、インサイダーの推理 3分）</p>
         <p style={{ margin: '4px 4px', fontSize: '0.8rem' }}>得点:</p>
 {/*        <p style={{ margin: '1px 0px', fontSize: '0.8rem' }}>　お題当てに失敗: 全プレイヤー -1点</p>*/}
-        <p style={{ margin: '1px 0px', fontSize: '0.8rem' }}>　インサイダーの推理成功: インサイダーを除く全員 +1点</p>
-        <p style={{ margin: '1px 0px', fontSize: '0.8rem' }}>　インサイダーの推理失敗: インサイダー +1点、（お題正解者かつインサイダーと間違われた庶民も +1点）</p>
+        <p style={{ margin: '1px 0px', fontSize: '0.8rem' }}>　インサイダーの推理成功: インサイダーを除く全プレイヤー +1点</p>
+        <p style={{ margin: '1px 0px', fontSize: '0.8rem' }}>　インサイダーの推理失敗: インサイダー、インサイダーと間違われた庶民 +1点</p>
       </div>
 
       <audio ref={gongRef} src="/gong.mp3" preload="auto" />
