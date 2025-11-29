@@ -420,12 +420,12 @@ export default function RoomPage() {
   const startThreeMinutes = async () => {
     setMinInput('3');
     setSecInput('0');
-    await startTimerWithTotal(3 * 60);
+    await startTimerWithTotal(3 * 60 - 1);
   };
   const startSevenMinutes = async () => {
     setMinInput('7');
     setSecInput('0');
-    await startTimerWithTotal(3 * 60);
+    await startTimerWithTotal(7 * 60 - 1);
   };
 
 
